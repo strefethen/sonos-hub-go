@@ -1,0 +1,4897 @@
+openapi: 3.0.3
+info:
+  title: Sonos Smart Routines Hub API
+  version: '1.0.0'
+  description: |
+    REST API for the Sonos Smart Routines Hub - a LAN-only home automation system for
+    Sonos speakers. Provides device discovery, scene/routine management, music playback
+    control, and integration with Apple Music. Designed for local-first operation with
+    observability via Prometheus metrics and structured JSON logging.
+servers:
+  - url: http://hub.local:8787
+tags:
+  - name: auth
+    description: Authentication and device pairing operations
+  - name: devices
+    description: Device discovery and registry management
+  - name: sonos
+    description: Direct Sonos speaker control and playback
+  - name: scenes
+    description: Scene configuration and execution management
+  - name: routines
+    description: Scheduled routine management
+  - name: executions
+    description: Job and routine execution history
+  - name: music
+    description: Music catalog and set management
+  - name: apple
+    description: Apple Music integration
+  - name: audit
+    description: Audit logging and activity history
+  - name: settings
+    description: System settings and preferences
+  - name: templates
+    description: Routine templates for quick setup
+  - name: assets
+    description: Static asset serving
+  - name: sonos-cloud
+    description: Sonos Cloud API integration
+  - name: system
+    description: System status and diagnostics
+paths:
+
+  # =========================================================================
+  # AUTH ENDPOINTS
+  # =========================================================================
+  /v1/auth/pair/complete:
+    post:
+      operationId: completePairing
+      tags: [auth]
+      summary: Complete pairing and obtain tokens
+      description: Complete the device pairing flow by submitting the pairing code displayed on the hub
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PairCompleteRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthTokensResponse' }
+  /v1/auth/pair/start:
+    post:
+      operationId: startPairing
+      tags: [auth]
+      summary: Start pairing (hub logs a short-lived code)
+      description: Initiate device pairing - the hub will log a short-lived pairing code
+      responses:
+        '200':
+          description: Pairing session started with code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PairStartResponse' }
+  /v1/auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [auth]
+      summary: Refresh access token
+      description: Exchange a refresh token for a new access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthAccessTokenResponse' }
+
+
+  # =========================================================================
+  # DASHBOARD ENDPOINTS
+  # =========================================================================
+  /v1/dashboard:
+    get:
+      operationId: getDashboard
+      tags: [audit]
+      summary: Aggregated dashboard view
+      description: Get aggregated dashboard data including recent executions, next scheduled routines, and system status
+      parameters:
+        - in: query
+          name: from
+          description: Start of date range filter (ISO 8601 datetime)
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          description: End of date range filter (ISO 8601 datetime)
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Dashboard data retrieved successfully
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardResponse' }
+
+
+  # =========================================================================
+  # DEVICES ENDPOINTS
+  # =========================================================================
+  /v1/devices:
+    get:
+      operationId: listDevices
+      tags: [devices]
+      summary: List logical devices
+      description: List all discovered Sonos devices on the network
+      responses:
+        '200':
+          description: List of discovered devices
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DevicesResponse' }
+  /v1/devices/rescan:
+    post:
+      operationId: rescanDevices
+      tags: [devices]
+      summary: Trigger discovery rescan
+      description: Force a network rescan to discover new or changed Sonos devices
+      responses:
+        '200':
+          description: Rescan initiated and completed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceRescanResponse' }
+  /v1/devices/stats:
+    get:
+      operationId: getDeviceStats
+      tags: [devices]
+      summary: Device statistics
+      description: Get statistics about discovered devices including counts and health status
+      responses:
+        '200':
+          description: Device statistics
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceStatsResponse' }
+
+  /v1/devices/topology:
+    get:
+      operationId: getDeviceTopology
+      tags: [devices]
+      summary: Get full device topology
+      description: Get the complete device topology including group relationships and coordinator assignments
+      responses:
+        '200':
+          description: Device topology information
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceTopologyResponse' }
+  /v1/devices/{device_id}:
+    get:
+      operationId: getDevice
+      tags: [devices]
+      summary: Get device by ID
+      description: Retrieve detailed information about a specific device
+      parameters:
+        - in: path
+          name: device_id
+          description: Unique device identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Device details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeviceResponse' }
+        '404':
+          description: Device not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  # =========================================================================
+  # SONOS ENDPOINTS
+  # =========================================================================
+  /v1/sonos/alarms:
+    get:
+      operationId: listSonosAlarms
+      tags: [sonos]
+      summary: List Sonos alarms
+      description: Get all configured alarms for a Sonos device
+      parameters:
+        - in: query
+          name: device_id
+          description: Target device identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of alarms for the device
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosAlarmsResponse' }
+  /v1/sonos/favorites:
+    get:
+      operationId: listSonosFavorites
+      tags: [sonos]
+      summary: List Sonos favorites (raw)
+      description: Get raw Sonos favorites with pagination support
+      parameters:
+        - in: query
+          name: start
+          description: Starting index for pagination
+          schema: { type: integer }
+        - in: query
+          name: count
+          description: Number of favorites to return
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Paginated list of Sonos favorites
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosFavoritesResponse' }
+
+  /v1/sonos/groups:
+    get:
+      operationId: listSonosGroups
+      tags: [sonos]
+      summary: List groups
+      description: Get all speaker groups for a device
+      parameters:
+        - in: query
+          name: device_id
+          description: Device identifier to query groups from
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of speaker groups
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosGroupsResponse' }
+    post:
+      operationId: createSonosGroup
+      tags: [sonos]
+      summary: Create group
+      description: Create a new speaker group with specified members
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SonosGroupCreateRequest' }
+      responses:
+        '200':
+          description: Group created successfully
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosGroupCreateResponse' }
+  /v1/sonos/groups/ungroup:
+    post:
+      operationId: ungroupSonosPlayers
+      tags: [sonos]
+      summary: Ungroup players
+      description: Remove players from a group, returning them to standalone mode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SonosUngroupRequest' }
+      responses:
+        '200':
+          description: Players ungrouped successfully
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosUngroupResponse' }
+  /v1/sonos/play:
+    post:
+      operationId: resumeSonosPlayback
+      tags: [sonos]
+      summary: Resume playback on coordinator
+      description: Resume playback on the coordinator of a speaker group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SonosPlayRequest' }
+      responses:
+        '200':
+          description: Playback resumed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosPlayResponse' }
+  /v1/sonos/play/content:
+    post:
+      operationId: playSonosContent
+      tags: [sonos]
+      summary: Play music content (direct playback or favorites)
+      description: |
+        Play any music content on a Sonos device. Supports both Sonos favorites and direct
+        content references (Spotify playlists, Apple Music albums, etc.). Direct content
+        bypasses the 70-favorite limit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlayContentRequest' }
+      responses:
+        '200':
+          description: Playback started successfully
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlayContentResponse' }
+        '400':
+          description: Validation error (e.g., station with invalid queue_mode)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: Device or content not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /v1/sonos/play/favorite:
+    post:
+      operationId: playSonosFavorite
+      tags: [sonos]
+      summary: Play a Sonos favorite
+      description: Start playback of a saved Sonos favorite by ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SonosPlayFavoriteRequest' }
+      responses:
+        '200':
+          description: Favorite playback started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosPlayFavoriteResponse' }
+        '404':
+          description: Favorite not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /v1/sonos/playback/next:
+    post:
+      operationId: skipToNextTrack
+      tags: [sonos]
+      summary: Skip to next track
+      description: Skip to the next track in the current queue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SonosPlaybackActionRequest' }
+      responses:
+        '200':
+          description: Skipped to next track
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosPlaybackActionResponse' }
+  /v1/sonos/playback/now-playing:
+    get:
+      operationId: getNowPlaying
+      tags: [sonos]
+      summary: Get now playing for group
+      description: Get information about the currently playing track for a device/group
+      parameters:
+        - in: query
+          name: device_id
+          description: Device identifier to query now playing from
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Current track information
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosNowPlayingResponse' }
+  /v1/sonos/playback/pause:
+    post:
+      operationId: pausePlayback
+      tags: [sonos]
+      summary: Pause playback
+      description: Pause playback on a device or group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SonosPlaybackActionRequest' }
+      responses:
+        '200':
+          description: Playback paused
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosPlaybackActionResponse' }
+  /v1/sonos/playback/play:
+    post:
+      operationId: playPlayback
+      tags: [sonos]
+      summary: Resume playback
+      description: Resume playback on a device or group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SonosPlaybackActionRequest' }
+      responses:
+        '200':
+          description: Playback resumed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosPlaybackActionResponse' }
+  /v1/sonos/playback/previous:
+    post:
+      operationId: skipToPreviousTrack
+      tags: [sonos]
+      summary: Skip to previous track
+      description: Skip to the previous track in the current queue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SonosPlaybackActionRequest' }
+      responses:
+        '200':
+          description: Skipped to previous track
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosPlaybackActionResponse' }
+  /v1/sonos/playback/state:
+    get:
+      operationId: getPlaybackState
+      tags: [sonos]
+      summary: Get transport state
+      description: Get the current transport state (playing, paused, stopped) for a device
+      parameters:
+        - in: query
+          name: device_id
+          description: Device identifier to query state from
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Current playback state
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosPlaybackStateResponse' }
+  /v1/sonos/playback/stop:
+    post:
+      operationId: stopPlayback
+      tags: [sonos]
+      summary: Stop playback
+      description: Stop playback on a device or group
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SonosPlaybackActionRequest' }
+      responses:
+        '200':
+          description: Playback stopped
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosPlaybackActionResponse' }
+  /v1/sonos/players:
+    get:
+      operationId: listSonosPlayers
+      tags: [sonos]
+      summary: List players
+      description: List all Sonos players visible to a device
+      parameters:
+        - in: query
+          name: device_id
+          description: Device identifier to query players from
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of Sonos players
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosPlayersResponse' }
+  /v1/sonos/players/{device_id}/state:
+    get:
+      operationId: getPlayerState
+      tags: [sonos]
+      summary: Get player state
+      description: Get detailed state information for a specific player
+      parameters:
+        - in: path
+          name: device_id
+          description: Target player device identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Player state details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosPlayerStateResponse' }
+  /v1/sonos/players/{device_id}/tv-status:
+    get:
+      operationId: getTvStatus
+      tags: [sonos]
+      summary: Get TV status
+      description: Check if TV audio is currently active on a player (for Arc/Beam/Playbar)
+      parameters:
+        - in: path
+          name: device_id
+          description: Target player device identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: TV status information
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosTvStatusResponse' }
+  /v1/sonos/services:
+    get:
+      operationId: listMusicServices
+      tags: [sonos]
+      summary: List available music services
+      description: |
+        Returns all available music services with their capabilities.
+        Use this to determine which services are ready for direct playback.
+      responses:
+        '200':
+          description: List of services with their capabilities
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServicesListResponse' }
+
+  /v1/sonos/services/{service}/health:
+    get:
+      operationId: getMusicServiceHealth
+      tags: [sonos]
+      summary: Get health status for a music service
+      description: |
+        Check the health and credential status of a specific music service.
+        Use this to diagnose issues with service availability.
+      parameters:
+        - name: service
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [spotify, apple_music, amazon_music]
+          description: Service identifier
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceHealthResponse' }
+        '400':
+          description: Invalid service name
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /v1/sonos/volume:
+    post:
+      operationId: adjustVolume
+      tags: [sonos]
+      summary: Adjust volume
+      description: Adjust volume up or down by a relative amount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SonosVolumeRequest' }
+      responses:
+        '200':
+          description: Volume adjusted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosVolumeResponse' }
+  /v1/sonos/volume/ramp:
+    post:
+      operationId: rampVolume
+      tags: [sonos]
+      summary: Ramp volume
+      description: Gradually ramp volume to a target level over time
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SonosVolumeRampRequest' }
+      responses:
+        '200':
+          description: Volume ramp started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosVolumeRampResponse' }
+  /v1/sonos/volume/set:
+    post:
+      operationId: setVolume
+      tags: [sonos]
+      summary: Set volume
+      description: Set volume to an absolute level
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SonosVolumeSetRequest' }
+      responses:
+        '200':
+          description: Volume set
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SonosVolumeSetResponse' }
+
+  # =========================================================================
+  # SCENES ENDPOINTS
+  # =========================================================================
+  /v1/scenes:
+    get:
+      operationId: listScenes
+      tags: [scenes]
+      summary: List scenes
+      description: Get a paginated list of all scenes
+      parameters:
+        - in: query
+          name: limit
+          description: Maximum number of scenes to return
+          schema: { type: integer }
+        - in: query
+          name: offset
+          description: Number of scenes to skip for pagination
+          schema: { type: integer }
+      responses:
+        '200':
+          description: List of scenes
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScenesListResponse' }
+    post:
+      operationId: createScene
+      tags: [scenes]
+      summary: Create scene
+      description: Create a new scene with playback configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SceneCreateRequest' }
+      responses:
+        '201':
+          description: Scene created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SceneResponse' }
+
+  /v1/scenes/{scene_id}:
+    get:
+      operationId: getScene
+      tags: [scenes]
+      summary: Get scene
+      description: Get details of a specific scene by ID
+      parameters:
+        - in: path
+          name: scene_id
+          description: Scene identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Scene details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SceneResponse' }
+        '404':
+          description: Scene not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    put:
+      operationId: updateScene
+      tags: [scenes]
+      summary: Update scene
+      description: Update an existing scene configuration
+      parameters:
+        - in: path
+          name: scene_id
+          description: Scene identifier
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SceneUpdateRequest' }
+      responses:
+        '200':
+          description: Scene updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SceneResponse' }
+        '404':
+          description: Scene not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      operationId: deleteScene
+      tags: [scenes]
+      summary: Delete scene
+      description: Delete a scene and its associated data
+      parameters:
+        - in: path
+          name: scene_id
+          description: Scene identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Scene deleted
+        '404':
+          description: Scene not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /v1/scenes/{scene_id}/execute:
+    post:
+      operationId: executeScene
+      tags: [scenes]
+      summary: Execute a scene
+      description: Trigger execution of a scene with optional overrides
+      parameters:
+        - in: path
+          name: scene_id
+          description: Scene identifier
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SceneExecuteRequest' }
+      responses:
+        '202':
+          description: Scene execution accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SceneExecuteResponse' }
+
+  /v1/scenes/{scene_id}/executions:
+    get:
+      operationId: listSceneExecutions
+      tags: [scenes]
+      summary: List executions for scene
+      description: Get execution history for a specific scene
+      parameters:
+        - in: path
+          name: scene_id
+          description: Scene identifier
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          description: Maximum number of executions to return
+          schema: { type: integer }
+        - in: query
+          name: offset
+          description: Number of executions to skip for pagination
+          schema: { type: integer }
+      responses:
+        '200':
+          description: List of scene executions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SceneExecutionsListResponse' }
+  /v1/scenes/{scene_id}/stop:
+    post:
+      operationId: stopScenePlayback
+      tags: [scenes]
+      summary: Stop scene playback
+      description: Stop playback for all devices in a scene
+      parameters:
+        - in: path
+          name: scene_id
+          description: Scene identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Playback stopped on all devices
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScenePlaybackResponse' }
+        '207':
+          description: Partial success - some devices failed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScenePlaybackResponse' }
+
+  # =========================================================================
+  # ROUTINES ENDPOINTS
+  # =========================================================================
+  /v1/routines:
+    get:
+      operationId: listRoutines
+      tags: [routines]
+      summary: List routines
+      description: Get all scheduled routines with optional filtering
+      parameters:
+        - in: query
+          name: enabled_only
+          description: Filter to only return enabled routines when set to 'true'
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of routines
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoutinesResponse' }
+    post:
+      operationId: createRoutine
+      tags: [routines]
+      summary: Create routine
+      description: Create a new scheduled routine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoutineCreateRequest' }
+      responses:
+        '201':
+          description: Routine created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoutineResponse' }
+
+  /v1/routines/test:
+    post:
+      operationId: testRoutine
+      tags: [routines]
+      summary: Test routine execution
+      description: Test execute a routine configuration without saving it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoutineTestRequest' }
+      responses:
+        '200':
+          description: Test execution result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoutineTestResponse' }
+  /v1/routines/{routine_id}:
+    get:
+      operationId: getRoutine
+      tags: [routines]
+      summary: Get routine
+      description: Get details of a specific routine by ID
+      parameters:
+        - in: path
+          name: routine_id
+          description: Routine identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Routine details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoutineResponse' }
+        '404':
+          description: Routine not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    put:
+      operationId: updateRoutine
+      tags: [routines]
+      summary: Update routine
+      description: Update an existing routine configuration
+      parameters:
+        - in: path
+          name: routine_id
+          description: Routine identifier
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoutineUpdateRequest' }
+      responses:
+        '200':
+          description: Routine updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoutineResponse' }
+        '404':
+          description: Routine not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      operationId: deleteRoutine
+      tags: [routines]
+      summary: Delete routine
+      description: Delete a routine and cancel any scheduled executions
+      parameters:
+        - in: path
+          name: routine_id
+          description: Routine identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Routine deleted
+        '404':
+          description: Routine not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /v1/routines/{routine_id}/run:
+    post:
+      operationId: runRoutine
+      tags: [routines]
+      summary: Run routine now
+      description: Immediately execute a routine regardless of schedule
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoutineRunRequest' }
+      parameters:
+        - in: path
+          name: routine_id
+          description: Routine identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '202':
+          description: Routine execution accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoutineRunResponse' }
+  /v1/routines/{routine_id}/skip:
+    post:
+      operationId: skipRoutine
+      tags: [routines]
+      summary: Skip next routine run
+      description: Skip the next scheduled execution of this routine
+      parameters:
+        - in: path
+          name: routine_id
+          description: Routine identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Next execution will be skipped
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoutineSkipResponse' }
+  /v1/routines/{routine_id}/unskip:
+    post:
+      operationId: unskipRoutine
+      tags: [routines]
+      summary: Clear skip next
+      description: Clear the skip flag and resume normal scheduling
+      parameters:
+        - in: path
+          name: routine_id
+          description: Routine identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Skip flag cleared
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoutineSkipResponse' }
+
+  # =========================================================================
+  # TEMPLATES ENDPOINTS
+  # =========================================================================
+  /v1/routine-templates:
+    get:
+      operationId: listRoutineTemplates
+      tags: [templates]
+      summary: List routine templates
+      description: Get all available routine templates for quick setup
+      responses:
+        '200':
+          description: List of templates
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoutineTemplatesResponse' }
+  /v1/routine-templates/{template_id}:
+    get:
+      operationId: getRoutineTemplate
+      tags: [templates]
+      summary: Get routine template
+      description: Get a specific routine template by ID
+      parameters:
+        - in: path
+          name: template_id
+          description: Template identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Template details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoutineTemplateResponse' }
+
+  # =========================================================================
+  # EXECUTIONS ENDPOINTS
+  # =========================================================================
+  /v1/executions:
+    get:
+      operationId: listExecutions
+      tags: [executions]
+      summary: List execution history
+      description: Get paginated list of routine execution history
+      parameters:
+        - in: query
+          name: limit
+          description: Maximum number of executions to return
+          schema: { type: integer }
+        - in: query
+          name: offset
+          description: Number of executions to skip for pagination
+          schema: { type: integer }
+        - in: query
+          name: routine_id
+          description: Filter by routine identifier
+          schema: { type: string }
+      responses:
+        '200':
+          description: List of executions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExecutionHistoryResponse' }
+  /v1/executions/{execution_id}/retry:
+    post:
+      operationId: retryExecution
+      tags: [executions]
+      summary: Retry an execution
+      description: Retry a failed execution
+      parameters:
+        - in: path
+          name: execution_id
+          description: Execution identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '202':
+          description: Retry accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExecutionRetryResponse' }
+
+  # =========================================================================
+  # Sonos Cloud API Endpoints
+  # =========================================================================
+
+
+  # =========================================================================
+  # MUSIC ENDPOINTS
+  # =========================================================================
+  /v1/music/providers:
+    get:
+      operationId: listMusicProviders
+      tags: [music]
+      summary: Music providers
+      description: Get all available music providers for search
+      responses:
+        '200':
+          description: List of music providers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MusicProvidersResponse' }
+  /v1/music/search:
+    get:
+      operationId: searchMusic
+      tags: [music]
+      summary: Unified music search
+      description: Search for music across providers
+      parameters:
+        - in: query
+          name: provider
+          description: Music provider to search (e.g., apple_music, spotify)
+          required: true
+          schema: { type: string }
+        - in: query
+          name: query
+          description: Search query string
+          required: true
+          schema: { type: string }
+        - in: query
+          name: types
+          description: Comma-separated content types to search (albums, playlists, songs)
+          schema: { type: string }
+        - in: query
+          name: limit
+          description: Maximum number of results to return
+          schema: { type: integer }
+        - in: query
+          name: offset
+          description: Number of results to skip for pagination
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MusicSearchResponse' }
+  /v1/music/sets:
+    get:
+      operationId: listMusicSets
+      tags: [music]
+      summary: List music sets
+      description: Returns all music sets with aggregated service logos
+      responses:
+        '200':
+          description: List of music sets
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MusicSetsResponse' }
+    post:
+      operationId: createMusicSet
+      tags: [music]
+      summary: Create music set
+      description: Create a new music set with Sonos favorites
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMusicSetRequest' }
+      responses:
+        '201':
+          description: Music set created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MusicSetResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /v1/music/sets/{set_id}:
+    get:
+      operationId: getMusicSet
+      tags: [music]
+      summary: Get music set by ID
+      description: Returns a music set with all its items
+      parameters:
+        - in: path
+          name: set_id
+          description: Music set identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Music set with items
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MusicSetWithItemsResponse' }
+        '404':
+          description: Set not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      operationId: updateMusicSet
+      tags: [music]
+      summary: Update music set
+      description: Update a music set's name or selection policy
+      parameters:
+        - in: path
+          name: set_id
+          description: Music set identifier
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMusicSetRequest' }
+      responses:
+        '200':
+          description: Updated music set
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MusicSetResponse' }
+        '404':
+          description: Set not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    delete:
+      operationId: deleteMusicSet
+      tags: [music]
+      summary: Delete music set
+      description: Delete a music set and all its items
+      parameters:
+        - in: path
+          name: set_id
+          description: Music set identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '204':
+          description: Set deleted
+        '404':
+          description: Set not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /v1/music/sets/{set_id}/content:
+    post:
+      operationId: addMusicSetContent
+      tags: [music]
+      summary: Add content to set by position
+      description: Add music content to a set at a specific position
+      parameters:
+        - in: path
+          name: set_id
+          description: Music set identifier
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetItemInput' }
+      responses:
+        '201':
+          description: Content added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetItemResponse' }
+  /v1/music/sets/{set_id}/content/{position}:
+    delete:
+      operationId: removeMusicSetContentByPosition
+      tags: [music]
+      summary: Remove content from set by position
+      description: Remove content from a set at a specific position
+      parameters:
+        - in: path
+          name: set_id
+          description: Music set identifier
+          required: true
+          schema: { type: string }
+        - in: path
+          name: position
+          description: Position of the item to remove (0-indexed)
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Content removed
+  /v1/music/sets/{set_id}/items:
+    post:
+      operationId: addMusicSetItem
+      tags: [music]
+      summary: Add item to music set
+      description: |
+        Add a music item to a set. Supports both legacy Sonos favorite format
+        and new MusicContent format for direct playback.
+      parameters:
+        - in: path
+          name: set_id
+          description: Music set identifier
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddSetItemRequest' }
+      responses:
+        '201':
+          description: Item added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SetItemResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: Set not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /v1/music/sets/{set_id}/items/reorder:
+    put:
+      operationId: reorderMusicSetItems
+      tags: [music]
+      summary: Reorder items in set
+      description: Change the order of items in a music set
+      parameters:
+        - in: path
+          name: set_id
+          description: Music set identifier
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReorderItemsRequest' }
+      responses:
+        '200':
+          description: Items reordered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReorderItemsResponse' }
+  /v1/music/sets/{set_id}/items/{sonos_favorite_id}:
+    delete:
+      operationId: removeMusicSetItem
+      tags: [music]
+      summary: Remove item from music set
+      description: Remove a specific item from a music set
+      parameters:
+        - in: path
+          name: set_id
+          description: Music set identifier
+          required: true
+          schema: { type: string }
+        - in: path
+          name: sonos_favorite_id
+          required: true
+          schema: { type: string }
+          description: The sonos_favorite_id or music_content identifier
+      responses:
+        '204':
+          description: Item removed
+        '404':
+          description: Set or item not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /v1/music/sets/{set_id}/play:
+    post:
+      operationId: playMusicSet
+      tags: [music]
+      summary: Play set content now
+      description: Start playback of a music set on specified devices
+      parameters:
+        - in: path
+          name: set_id
+          description: Music set identifier
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlayMusicSetRequest' }
+      responses:
+        '200':
+          description: Playback started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlayMusicSetResponse' }
+  /v1/music/suggestions:
+    get:
+      operationId: getMusicSuggestions
+      tags: [music]
+      summary: Music suggestions
+      description: Get search suggestions for autocomplete
+      parameters:
+        - in: query
+          name: provider
+          description: Music provider to get suggestions from
+          required: true
+          schema: { type: string }
+        - in: query
+          name: query
+          description: Partial search query for suggestions
+          required: true
+          schema: { type: string }
+        - in: query
+          name: types
+          description: Comma-separated content types
+          schema: { type: string }
+        - in: query
+          name: limit
+          description: Maximum suggestions to return
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Search suggestions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MusicSuggestionsResponse' }
+
+  # =========================================================================
+  # APPLE ENDPOINTS
+  # =========================================================================
+  /v1/apple/browse/charts:
+    get:
+      operationId: browseAppleMusicCharts
+      tags: [apple]
+      summary: Browse Apple Music charts
+      description: Get top charts from Apple Music
+      parameters:
+        - in: query
+          name: types
+          description: Chart types to fetch (albums, songs, playlists)
+          schema: { type: string }
+        - in: query
+          name: limit
+          description: Maximum items per chart
+          schema: { type: integer }
+        - in: header
+          name: music-user-token
+          required: false
+          description: Apple Music user token for personalized results
+          schema: { type: string }
+      responses:
+        '200':
+          description: Chart data
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppleChartsResponse' }
+  /v1/apple/import:
+    post:
+      operationId: importAppleMusicItem
+      tags: [apple]
+      summary: Import Apple Music item
+      description: Import an Apple Music item to the local catalog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppleImportRequest' }
+      responses:
+        '200':
+          description: Item imported
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppleImportResponse' }
+  /v1/apple/item/{type}/{id}:
+    get:
+      operationId: getAppleMusicItem
+      tags: [apple]
+      summary: Get Apple Music item
+      description: Fetch a specific Apple Music item by type and ID
+      parameters:
+        - in: path
+          name: type
+          description: Item type
+          required: true
+          schema: { type: string, enum: [songs, albums, playlists, artists] }
+        - in: path
+          name: id
+          description: Apple Music item ID
+          required: true
+          schema: { type: string }
+        - in: header
+          name: music-user-token
+          required: false
+          description: Apple Music user token for library items
+          schema: { type: string }
+      responses:
+        '200':
+          description: Item details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppleItemResponse' }
+        '404':
+          description: Item not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppleErrorResponse' }
+  /v1/apple/recommendations:
+    get:
+      operationId: getAppleMusicRecommendations
+      tags: [apple]
+      summary: Apple Music recommendations
+      description: Get personalized recommendations (requires user token)
+      parameters:
+        - in: query
+          name: limit
+          description: Maximum recommendations to return
+          schema: { type: integer }
+        - in: header
+          name: music-user-token
+          required: true
+          description: Apple Music user token (required)
+          schema: { type: string }
+      responses:
+        '200':
+          description: Personalized recommendations
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppleRecommendationsResponse' }
+        '401':
+          description: User token required
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppleErrorResponse' }
+  /v1/apple/search:
+    get:
+      operationId: searchAppleMusic
+      tags: [apple]
+      summary: Search Apple Music
+      description: Search the Apple Music catalog
+      parameters:
+        - in: query
+          name: q
+          description: Search query
+          required: true
+          schema: { type: string }
+        - in: query
+          name: types
+          description: Content types to search
+          schema: { type: string }
+        - in: query
+          name: limit
+          description: Maximum results per type
+          schema: { type: integer }
+        - in: query
+          name: include_counts
+          description: Include total counts for each type
+          schema: { type: boolean }
+        - in: header
+          name: music-user-token
+          required: false
+          description: Apple Music user token for library search
+          schema: { type: string }
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppleSearchResponse' }
+
+  /v1/apple/suggestions:
+    get:
+      operationId: getAppleMusicSuggestions
+      tags: [apple]
+      summary: Apple Music suggestions
+      description: Get search suggestions for autocomplete
+      parameters:
+        - in: query
+          name: term
+          description: Partial search term
+          required: true
+          schema: { type: string }
+        - in: query
+          name: kinds
+          description: Suggestion kinds to include
+          schema: { type: string }
+        - in: query
+          name: types
+          description: Content types for term suggestions
+          schema: { type: string }
+        - in: query
+          name: limit
+          description: Maximum suggestions
+          schema: { type: integer }
+        - in: header
+          name: music-user-token
+          required: false
+          description: Apple Music user token
+          schema: { type: string }
+      responses:
+        '200':
+          description: Search suggestions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppleSuggestionsResponse' }
+  /v1/apple/token/refresh:
+    post:
+      operationId: refreshAppleMusicToken
+      tags: [apple]
+      summary: Refresh Apple Music token
+      description: Refresh the developer token for Apple Music API access
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppleTokenRefreshResponse' }
+  /v1/apple/token/status:
+    get:
+      operationId: getAppleMusicTokenStatus
+      tags: [apple]
+      summary: Apple Music token status
+      description: Check the current status of the Apple Music developer token
+      responses:
+        '200':
+          description: Token status
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppleTokenStatusResponse' }
+
+  # =========================================================================
+  # AUDIT ENDPOINTS
+  # =========================================================================
+  /v1/audit/events:
+    get:
+      operationId: listAuditEvents
+      tags: [audit]
+      summary: Query audit events
+      description: Query audit events with filters
+      parameters:
+        - in: query
+          name: from
+          description: Start of date range filter
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          description: End of date range filter
+          schema: { type: string, format: date-time }
+        - in: query
+          name: job_id
+          description: Filter by job ID
+          schema: { type: string }
+        - in: query
+          name: routine_id
+          description: Filter by routine ID
+          schema: { type: string }
+        - in: query
+          name: scene_execution_id
+          description: Filter by scene execution ID
+          schema: { type: string }
+        - in: query
+          name: device_id
+          description: Filter by device ID
+          schema: { type: string }
+        - in: query
+          name: type
+          description: Filter by event type
+          schema: { type: string }
+        - in: query
+          name: level
+          description: Filter by severity level
+          schema: { type: string }
+        - in: query
+          name: limit
+          description: Maximum events to return
+          schema: { type: integer }
+        - in: query
+          name: offset
+          description: Number of events to skip
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Audit events
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditEventsResponse' }
+    post:
+      operationId: createAuditEvent
+      tags: [audit]
+      summary: Create audit event
+      description: Record a new audit event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuditEventCreateRequest' }
+      responses:
+        '201':
+          description: Event created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditEventResponse' }
+
+  /v1/audit/events/{event_id}:
+    get:
+      operationId: getAuditEvent
+      tags: [audit]
+      summary: Get audit event
+      description: Get a specific audit event by ID
+      parameters:
+        - in: path
+          name: event_id
+          description: Audit event identifier
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Audit event details
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditEventResponse' }
+        '404':
+          description: Event not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  # =========================================================================
+  # SETTINGS ENDPOINTS
+  # =========================================================================
+  /v1/settings/tv-routing:
+    get:
+      operationId: getTvRoutingSettings
+      tags: [settings]
+      summary: Get TV routing settings
+      description: Retrieve current TV audio routing configuration including fallback behavior
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TVRoutingSettingsResponse' }
+    put:
+      operationId: updateTvRoutingSettings
+      tags: [settings]
+      summary: Update TV routing settings
+      description: Update TV audio routing configuration to control speaker behavior during TV playback
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TVRoutingSettingsUpdateRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TVRoutingSettingsResponse' }
+
+  # =========================================================================
+  # ASSETS ENDPOINTS
+  # =========================================================================
+  /v1/assets/{asset_path}:
+    get:
+      operationId: getAsset
+      tags: [assets]
+      summary: Serve static assets
+      description: Retrieve static asset files such as images and icons
+      parameters:
+        - in: path
+          name: asset_path
+          description: Path to the asset file
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+  # =========================================================================
+  # SONOS-CLOUD ENDPOINTS
+  # =========================================================================
+  /v1/sonos-cloud/auth/callback:
+    get:
+      operationId: handleSonosCloudCallback
+      tags: [sonos-cloud]
+      summary: OAuth callback handler
+      description: Handles OAuth redirect from Sonos, exchanges authorization code for tokens
+      parameters:
+        - in: query
+          name: code
+          description: Authorization code from Sonos
+          schema:
+            type: string
+        - in: query
+          name: state
+          schema:
+            type: string
+          description: CSRF state parameter
+        - in: query
+          name: error
+          schema:
+            type: string
+          description: Error code if authorization failed
+        - in: query
+          name: error_description
+          schema:
+            type: string
+          description: Human-readable error description
+      responses:
+        '200':
+          description: Success HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: OAuth error or invalid state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudErrorResponse'
+        '500':
+          description: Token exchange failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudErrorResponse'
+
+  /v1/sonos-cloud/auth/disconnect:
+    post:
+      operationId: disconnectSonosCloud
+      tags: [sonos-cloud]
+      summary: Clear stored tokens and disconnect
+      description: Removes all stored Sonos Cloud tokens
+      responses:
+        '200':
+          description: Disconnected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudAuthDisconnectResponse'
+
+  /v1/sonos-cloud/auth/refresh:
+    post:
+      operationId: refreshSonosCloudToken
+      tags: [sonos-cloud]
+      summary: Force refresh access token
+      description: Manually refresh the Sonos Cloud access token
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudAuthRefreshResponse'
+        '500':
+          description: Refresh failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudErrorResponse'
+
+  /v1/sonos-cloud/auth/start:
+    get:
+      operationId: startSonosCloudAuth
+      tags: [sonos-cloud]
+      summary: Get OAuth authorization URL
+      description: Returns the Sonos OAuth authorization URL and state parameter for CSRF protection
+      parameters:
+        - in: query
+          name: redirect
+          description: If 'true', redirects browser directly to Sonos OAuth
+          schema:
+            type: string
+            enum: ['true', 'false']
+      responses:
+        '200':
+          description: Returns authorization URL and state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudAuthStartResponse'
+        '302':
+          description: Redirects to Sonos OAuth (when redirect=true)
+
+  /v1/sonos-cloud/auth/status:
+    get:
+      operationId: getSonosCloudStatus
+      tags: [sonos-cloud]
+      summary: Get connection status
+      description: Returns current Sonos Cloud connection and token status
+      responses:
+        '200':
+          description: Current connection status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudAuthStatusResponse'
+
+  /v1/sonos-cloud/groups:
+    get:
+      operationId: listSonosCloudGroups
+      tags: [sonos-cloud]
+      summary: List groups in household
+      description: Returns all speaker groups in the specified household
+      parameters:
+        - in: query
+          name: householdId
+          description: Household ID (uses cached household if omitted)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of groups
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudGroupsResponse'
+        '400':
+          description: Missing household ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudErrorResponse'
+        '500':
+          description: API error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudErrorResponse'
+
+  /v1/sonos-cloud/households:
+    get:
+      operationId: listSonosCloudHouseholds
+      tags: [sonos-cloud]
+      summary: List connected households
+      description: Returns all Sonos households associated with the authenticated account
+      responses:
+        '200':
+          description: List of households
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudHouseholdsResponse'
+        '500':
+          description: API error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudErrorResponse'
+
+  /v1/sonos-cloud/players:
+    get:
+      operationId: listSonosCloudPlayers
+      tags: [sonos-cloud]
+      summary: List players in household
+      description: Returns all Sonos players in the specified household
+      parameters:
+        - in: query
+          name: householdId
+          description: Household ID (uses cached household if omitted)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of players
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudPlayersResponse'
+        '400':
+          description: Missing household ID
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudErrorResponse'
+        '500':
+          description: API error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudErrorResponse'
+
+  /v1/sonos-cloud/players/{playerId}/audioClip:
+    post:
+      operationId: playSonosCloudAudioClip
+      tags: [sonos-cloud]
+      summary: Play audio clip on player
+      description: Overlay an audio notification on the player without interrupting current playback
+      parameters:
+        - in: path
+          name: playerId
+          description: Sonos player ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SonosCloudAudioClipRequest'
+      responses:
+        '200':
+          description: Audio clip scheduled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudAudioClipResponse'
+        '400':
+          description: Missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudErrorResponse'
+        '500':
+          description: API error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SonosCloudErrorResponse'
+
+  # =========================================================================
+  # SYSTEM ENDPOINTS
+  # =========================================================================
+
+  /v1/system/info:
+    get:
+      operationId: getSystemInfo
+      tags: [system]
+      summary: Get system information
+      description: Returns server health, resource usage, and connection status
+      responses:
+        '200':
+          description: System status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemInfoResponse'
+
+  /v1/openapi:
+    get:
+      operationId: getOpenApiYaml
+      tags: [system]
+      summary: Get OpenAPI specification (YAML)
+      description: Returns the complete OpenAPI specification in YAML format
+      responses:
+        '200':
+          description: OpenAPI specification
+          content:
+            text/yaml:
+              schema:
+                type: string
+
+  /v1/openapi.json:
+    get:
+      operationId: getOpenApiJson
+      tags: [system]
+      summary: Get OpenAPI specification (JSON)
+      description: Returns the complete OpenAPI specification in JSON format
+      responses:
+        '200':
+          description: OpenAPI specification
+          content:
+            application/json:
+              schema:
+                type: object
+
+components:
+  schemas:
+    OkResponse:
+      type: object
+      required: [request_id]
+      properties:
+        request_id: { type: string }
+    GenericResponse:
+      type: object
+      required: [request_id]
+      properties:
+        request_id: { type: string }
+        data:
+          type: object
+          additionalProperties: true
+    Remediation:
+      type: object
+      description: Remediation guidance for error recovery
+      required: [action]
+      properties:
+        action:
+          type: string
+          description: Machine-readable action code (e.g., 'BOOTSTRAP_SERVICE', 'RETRY_LATER')
+        endpoint:
+          type: string
+          description: API endpoint to call to fix the issue
+        user_action:
+          type: string
+          description: Human-readable instruction for the user
+    ErrorResponse:
+      type: object
+      required: [request_id, error]
+      properties:
+        request_id: { type: string }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+            remediation: { $ref: '#/components/schemas/Remediation' }
+    PairStartResponse:
+      type: object
+      required: [request_id, pairing_hint]
+      properties:
+        request_id: { type: string }
+        pairing_hint: { type: string }
+    PairCompleteRequest:
+      type: object
+      required: [pair_code, device_name]
+      properties:
+        pair_code: { type: string }
+        device_name: { type: string }
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: { type: string }
+    AuthTokensResponse:
+      type: object
+      required: [request_id, access_token, refresh_token, expires_in_sec]
+      properties:
+        request_id: { type: string }
+        access_token: { type: string }
+        refresh_token: { type: string }
+        expires_in_sec: { type: integer }
+    AuthAccessTokenResponse:
+      type: object
+      required: [request_id, access_token, expires_in_sec]
+      properties:
+        request_id: { type: string }
+        access_token: { type: string }
+        expires_in_sec: { type: integer }
+
+    Device:
+      type: object
+      required:
+        [
+          device_id,
+          room_name,
+          ip,
+          role,
+          is_targetable,
+          supports_airplay,
+          last_seen_at,
+          model,
+          is_coordinator_capable,
+          logical_group_id,
+          physical_device_count
+        ]
+      properties:
+        device_id: { type: string }
+        udn: { type: string, nullable: true }
+        room_name: { type: string }
+        ip: { type: string }
+        model: { type: string }
+        role: { type: string }
+        is_targetable: { type: boolean }
+        is_coordinator_capable: { type: boolean }
+        supports_airplay: { type: boolean }
+        logical_group_id: { type: string, nullable: true }
+        last_seen_at: { type: string, format: date-time }
+        physical_device_count: { type: integer }
+        physical_devices:
+          type: array
+          items: { $ref: '#/components/schemas/PhysicalDevice' }
+
+    PhysicalDevice:
+      type: object
+      required:
+        [
+          device_id,
+          udn,
+          model,
+          model_number,
+          room_name,
+          role,
+          is_coordinator_capable,
+          supports_airplay,
+          last_seen_at
+        ]
+      properties:
+        device_id: { type: string }
+        udn: { type: string }
+        model: { type: string }
+        model_number: { type: string }
+        room_name: { type: string }
+        role: { type: string }
+        is_coordinator_capable: { type: boolean }
+        supports_airplay: { type: boolean }
+        last_seen_at: { type: string, format: date-time }
+    DevicesResponse:
+      type: object
+      required: [request_id, count, devices]
+      properties:
+        request_id: { type: string }
+        count: { type: integer }
+        devices:
+          type: array
+          items: { $ref: '#/components/schemas/Device' }
+
+    DeviceResponse:
+      type: object
+      required: [request_id, device]
+      properties:
+        request_id: { type: string }
+        device: { $ref: '#/components/schemas/Device' }
+
+    DeviceRescanResponse:
+      type: object
+      required: [request_id, devices_found, duration_ms]
+      properties:
+        request_id: { type: string }
+        devices_found: { type: integer }
+        duration_ms: { type: integer }
+
+    DeviceTopologyResponse:
+      type: object
+      required: [request_id, topology]
+      properties:
+        request_id: { type: string }
+        topology:
+          type: object
+          required: [devices, home_theater_groups, stereo_pairs, updated_at]
+          properties:
+            devices:
+              type: array
+              items: { $ref: '#/components/schemas/Device' }
+            home_theater_groups:
+              type: array
+              items:
+                type: object
+                required: [group_id, master, surrounds, sub]
+                properties:
+                  group_id: { type: string }
+                  master: { $ref: '#/components/schemas/PhysicalDevice' }
+                  surrounds:
+                    type: array
+                    items: { $ref: '#/components/schemas/PhysicalDevice' }
+                  sub:
+                    allOf:
+                      - $ref: '#/components/schemas/PhysicalDevice'
+                    nullable: true
+            stereo_pairs:
+              type: array
+              items:
+                type: object
+                required: [pair_id, room_name, left, right]
+                properties:
+                  pair_id: { type: string }
+                  room_name: { type: string }
+                  left: { $ref: '#/components/schemas/PhysicalDevice' }
+                  right: { $ref: '#/components/schemas/PhysicalDevice' }
+            updated_at: { type: string, format: date-time }
+
+    DeviceStatsResponse:
+      type: object
+      required: [total, online, offline, last_discovery]
+      properties:
+        total: { type: integer }
+        online: { type: integer }
+        offline: { type: integer }
+        last_discovery:
+          type: string
+          format: date-time
+          nullable: true
+
+    ExecutionHistoryResponse:
+      type: object
+      required: [request_id, executions, pagination]
+      properties:
+        request_id: { type: string }
+        executions:
+          type: array
+          items:
+            type: object
+            required:
+              [
+                id,
+                routine_id,
+                routine_name,
+                timestamp,
+                outcome,
+                target_devices,
+                content_played,
+                failure_reason,
+                failure_message,
+                fallback_used
+              ]
+            properties:
+              id: { type: string }
+              routine_id: { type: string }
+              routine_name: { type: string }
+              timestamp: { type: string, format: date-time }
+              outcome:
+                type: string
+                enum: [success, partial, failed, skipped, snoozed]
+              target_devices:
+                type: array
+                items: { type: string }
+              content_played:
+                type: object
+                additionalProperties: true
+                nullable: true
+              failure_reason:
+                type: string
+                nullable: true
+              failure_message:
+                type: string
+                nullable: true
+              fallback_used: { type: boolean }
+        pagination:
+          type: object
+          required: [limit, offset, has_more]
+          properties:
+            limit: { type: integer }
+            offset: { type: integer }
+            has_more: { type: boolean }
+
+    ExecutionRetryResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required: [execution_id, new_execution_id, status]
+          properties:
+            execution_id: { type: string }
+            new_execution_id: { type: string }
+            status: { type: string }
+
+    DashboardResponse:
+      type: object
+      required: [request_id, next_up, upcoming_routines, attention_items]
+      properties:
+        request_id: { type: string }
+        next_up:
+          allOf:
+            - $ref: '#/components/schemas/DashboardNextUp'
+          nullable: true
+        upcoming_routines:
+          type: array
+          items: { $ref: '#/components/schemas/DashboardNextUp' }
+        attention_items:
+          type: array
+          items: { $ref: '#/components/schemas/DashboardAttentionItem' }
+
+    DashboardNextUp:
+      type: object
+      required:
+        [routine_id, routine_name, scheduled_time, target_rooms, music_preview, artwork_url, template_id]
+      properties:
+        routine_id: { type: string }
+        routine_name: { type: string }
+        scheduled_time: { type: string, format: date-time }
+        target_rooms:
+          type: array
+          items: { type: string }
+        music_preview:
+          type: string
+          nullable: true
+        artwork_url:
+          type: string
+          nullable: true
+        template_id:
+          type: string
+          nullable: true
+
+    DashboardAttentionItem:
+      type: object
+      required: [id, reason, affected_routines, timestamp]
+      properties:
+        id: { type: string }
+        reason: { type: string }
+        affected_routines:
+          type: array
+          items: { type: string }
+        timestamp: { type: string, format: date-time }
+
+    Favorite:
+      type: object
+      required: [favorite_id, name, payload]
+      properties:
+        favorite_id: { type: string }
+        name: { type: string }
+        payload: { type: object, additionalProperties: true }
+    FavoritesResponse:
+      type: object
+      required: [request_id, favorites]
+      properties:
+        request_id: { type: string }
+        favorites:
+          type: array
+          items: { $ref: '#/components/schemas/Favorite' }
+
+    SceneUpsert:
+      type: object
+      required: [name, members]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        members:
+          type: array
+          items:
+            type: object
+            required: [device_id, target_volume]
+            properties:
+              device_id: { type: string }
+              target_volume: { type: integer }
+              mute: { type: boolean }
+        coordinator_preference: { type: string, default: ARC_FIRST }
+        fallback_policy: { type: string, default: PLAYBASE_IF_ARC_TV_ACTIVE }
+        volume_ramp:
+          type: object
+          additionalProperties: true
+        teardown:
+          type: object
+          additionalProperties: true
+    SceneResponse:
+      type: object
+      required: [request_id, scene]
+      properties:
+        request_id: { type: string }
+        scene: { $ref: '#/components/schemas/Scene' }
+    ScenesListResponse:
+      type: object
+      required: [request_id, scenes, pagination]
+      properties:
+        request_id: { type: string }
+        scenes:
+          type: array
+          items: { $ref: '#/components/schemas/Scene' }
+        pagination:
+          type: object
+          required: [total, limit, offset, has_more]
+          properties:
+            total: { type: integer }
+            limit: { type: integer }
+            offset: { type: integer }
+            has_more: { type: boolean }
+
+    SceneMember:
+      type: object
+      required: [device_id]
+      properties:
+        device_id: { type: string }
+        room_name:
+          type: string
+          nullable: true
+        target_volume:
+          type: integer
+          nullable: true
+        mute:
+          type: boolean
+          nullable: true
+
+    VolumeRamp:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        duration_ms:
+          type: integer
+          nullable: true
+        curve:
+          type: string
+          enum: [linear, ease-in, ease-out]
+          nullable: true
+
+    Teardown:
+      type: object
+      properties:
+        ungroup_after_ms:
+          type: integer
+          nullable: true
+        restore_previous_state:
+          type: boolean
+          nullable: true
+
+    Scene:
+      type: object
+      required:
+        [
+          scene_id,
+          name,
+          description,
+          coordinator_preference,
+          fallback_policy,
+          members,
+          volume_ramp,
+          teardown,
+          created_at,
+          updated_at
+        ]
+      properties:
+        scene_id: { type: string }
+        name: { type: string }
+        description:
+          type: string
+          nullable: true
+        coordinator_preference:
+          type: string
+          enum: [ARC_FIRST]
+        fallback_policy:
+          type: string
+          enum: [PLAYBASE_IF_ARC_TV_ACTIVE]
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/SceneMember' }
+        volume_ramp:
+          allOf:
+            - $ref: '#/components/schemas/VolumeRamp'
+          nullable: true
+        teardown:
+          allOf:
+            - $ref: '#/components/schemas/Teardown'
+          nullable: true
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    SceneCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        coordinator_preference:
+          type: string
+          enum: [ARC_FIRST]
+        fallback_policy:
+          type: string
+          enum: [PLAYBASE_IF_ARC_TV_ACTIVE]
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/SceneMember' }
+        volume_ramp: { $ref: '#/components/schemas/VolumeRamp' }
+        teardown: { $ref: '#/components/schemas/Teardown' }
+
+    SceneUpdateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/SceneMember' }
+        volume_ramp: { $ref: '#/components/schemas/VolumeRamp' }
+        teardown: { $ref: '#/components/schemas/Teardown' }
+
+    SceneExecution:
+      type: object
+      required:
+        [
+          scene_execution_id,
+          scene_id,
+          idempotency_key,
+          coordinator_used_device_id,
+          status,
+          started_at,
+          ended_at,
+          steps,
+          verification,
+          error
+        ]
+      properties:
+        scene_execution_id: { type: string }
+        scene_id: { type: string }
+        idempotency_key:
+          type: string
+          nullable: true
+        coordinator_used_device_id:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [STARTING, PLAYING_CONFIRMED, FAILED, ROLLED_BACK]
+        started_at: { type: string, format: date-time }
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        steps:
+          type: array
+          items: { $ref: '#/components/schemas/ExecutionStep' }
+        verification:
+          allOf:
+            - $ref: '#/components/schemas/PlaybackVerification'
+          nullable: true
+        error:
+          type: string
+          nullable: true
+
+    ExecutionStep:
+      type: object
+      required: [step, status]
+      properties:
+        step: { type: string }
+        status: { type: string }
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        ended_at:
+          type: string
+          format: date-time
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        details:
+          type: object
+          additionalProperties: true
+
+    PlaybackVerification:
+      type: object
+      required: [playback_confirmed, checked_at]
+      properties:
+        playback_confirmed: { type: boolean }
+        transport_state: { type: string }
+        track_uri: { type: string }
+        checked_at: { type: string, format: date-time }
+        verification_unavailable: { type: boolean }
+
+    SceneExecutionResponse:
+      type: object
+      required: [request_id, execution]
+      properties:
+        request_id: { type: string }
+        execution: { $ref: '#/components/schemas/SceneExecution' }
+
+    SceneExecutionsListResponse:
+      type: object
+      required: [request_id, executions, pagination]
+      properties:
+        request_id: { type: string }
+        executions:
+          type: array
+          items: { $ref: '#/components/schemas/SceneExecution' }
+        pagination:
+          type: object
+          required: [total, limit, offset, has_more]
+          properties:
+            total: { type: integer }
+            limit: { type: integer }
+            offset: { type: integer }
+            has_more: { type: boolean }
+
+    ScenePlaybackResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required: [scene_id, results, all_succeeded]
+          properties:
+            scene_id: { type: string }
+            results:
+              type: array
+              items:
+                type: object
+                required: [device_id, success]
+                properties:
+                  device_id: { type: string }
+                  success: { type: boolean }
+                  error:
+                    type: string
+                    nullable: true
+            all_succeeded: { type: boolean }
+            started_at:
+              type: string
+              format: date-time
+            stopped_at:
+              type: string
+              format: date-time
+
+    SceneExecuteRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [MANUAL, SCHEDULED]
+          description: Why the scene is being executed
+        dry_run:
+          type: boolean
+          description: If true, validate but don't actually execute
+        favorite_id:
+          type: string
+          deprecated: true
+          description: |
+            DEPRECATED - Use music_content instead.
+            Legacy Sonos favorite ID (e.g., "FV:2/34") to play.
+        content:
+          $ref: '#/components/schemas/MusicContent'
+          description: Music content to play (new format - preferred)
+        queue_mode:
+          $ref: '#/components/schemas/QueueMode'
+          description: How to handle the playback queue
+        group_behavior:
+          $ref: '#/components/schemas/GroupBehavior'
+          description: How to handle grouped speakers
+        music_target:
+          type: object
+          deprecated: true
+          description: |
+            DEPRECATED - Use content instead.
+            Legacy music target specification.
+          additionalProperties: true
+    SceneExecuteResponse:
+      type: object
+      required: [request_id, scene_execution_id]
+      properties:
+        request_id: { type: string }
+        scene_execution_id: { type: string }
+        content_played:
+          $ref: '#/components/schemas/MusicContent'
+          description: The music content that was played (if any)
+        queue_mode_used:
+          $ref: '#/components/schemas/QueueMode'
+        group_behavior_used:
+          $ref: '#/components/schemas/GroupBehavior'
+
+    WeeklySchedule:
+      type: object
+      required: [type, weekdays, time]
+      properties:
+        type:
+          type: string
+          enum: [weekly]
+          description: Schedule type discriminator
+        weekdays:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+            maximum: 6
+          minItems: 1
+          description: Days of week to run (0=Sunday, 6=Saturday)
+        time:
+          type: string
+          pattern: '^\d{2}:\d{2}$'
+          description: Time of day in HH:MM format (24-hour)
+
+    AnnualSchedule:
+      type: object
+      required: [type, month, day, time]
+      properties:
+        type:
+          type: string
+          enum: [annual]
+          description: Schedule type discriminator
+        month:
+          type: integer
+          minimum: 1
+          maximum: 12
+          description: Month of year (1-12)
+        day:
+          type: integer
+          minimum: 1
+          maximum: 31
+          description: Day of month (1-31)
+        time:
+          type: string
+          pattern: '^\d{2}:\d{2}$'
+          description: Time of day in HH:MM format (24-hour)
+
+    Schedule:
+      oneOf:
+        - $ref: '#/components/schemas/WeeklySchedule'
+        - $ref: '#/components/schemas/AnnualSchedule'
+      discriminator:
+        propertyName: type
+        mapping:
+          weekly: '#/components/schemas/WeeklySchedule'
+          annual: '#/components/schemas/AnnualSchedule'
+
+    RoutineUpsert:
+      type: object
+      required: [name, timezone, schedule]
+      properties:
+        name:
+          type: string
+          description: Display name for the routine
+        enabled:
+          type: boolean
+          description: Whether the routine is active
+        timezone:
+          type: string
+          description: Timezone for schedule interpretation (e.g., "America/New_York")
+        schedule:
+          $ref: '#/components/schemas/Schedule'
+        holiday_behavior:
+          type: string
+          enum: [SKIP, DELAY, ALTERNATE]
+          description: What to do when routine falls on a holiday
+        scene_id:
+          type: string
+          description: Existing scene ID (legacy - use speakers instead)
+        speakers:
+          type: array
+          description: Speakers for this routine (auto-creates scene)
+          items:
+            $ref: '#/components/schemas/RoutineSpeaker'
+        music_policy:
+          $ref: '#/components/schemas/RoutineMusicPolicy'
+        constraints:
+          $ref: '#/components/schemas/RoutineConstraintsInput'
+        template_id:
+          type: string
+          description: Template ID this routine was created from (for visual styling)
+    RoutineCreateRequest:
+      allOf:
+        - $ref: '#/components/schemas/RoutineUpsert'
+    RoutineUpdateRequest:
+      type: object
+      properties:
+        name: { type: string }
+        enabled: { type: boolean }
+        timezone: { type: string }
+        schedule: { $ref: '#/components/schemas/Schedule' }
+        holiday_behavior:
+          type: string
+          enum: [SKIP, DELAY, ALTERNATE]
+        scene_id: { type: string }
+        speakers:
+          type: array
+          items: { $ref: '#/components/schemas/RoutineSpeaker' }
+        music_policy: { $ref: '#/components/schemas/RoutineMusicPolicy' }
+        constraints: { $ref: '#/components/schemas/RoutineConstraintsInput' }
+        skip_next: { type: boolean }
+        template_id: { type: string }
+    RoutineRunRequest:
+      type: object
+      properties:
+        override_room: { type: string }
+        override_device_ids:
+          type: array
+          items: { type: string }
+    RoutineRunResponse:
+      type: object
+      required: [request_id, job]
+      properties:
+        request_id: { type: string }
+        job:
+          type: object
+          required: [routine_id, scene_id, scene_execution_id, status]
+          properties:
+            routine_id: { type: string }
+            scene_id: { type: string }
+            scene_execution_id: { type: string }
+            status: { type: string }
+            override_room: { type: string }
+            override_device_ids:
+              type: array
+              items: { type: string }
+    RoutineSkipResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required: [routine_id, skip_next, message]
+          properties:
+            routine_id: { type: string }
+            skip_next: { type: boolean }
+            message: { type: string }
+    RoutineTestRequest:
+      type: object
+      required: [speakers, music_policy]
+      properties:
+        speakers:
+          type: array
+          items: { $ref: '#/components/schemas/RoutineSpeaker' }
+        music_policy: { $ref: '#/components/schemas/RoutineMusicPolicy' }
+    RoutineTestResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required: [scene_id, scene_execution_id, status]
+          properties:
+            scene_id: { type: string }
+            scene_execution_id:
+              type: string
+              nullable: true
+            status: { type: string }
+    RoutineResponse:
+      type: object
+      required: [request_id, routine]
+      properties:
+        request_id: { type: string }
+        routine: { $ref: '#/components/schemas/Routine' }
+    RoutinesResponse:
+      type: object
+      required: [request_id, routines]
+      properties:
+        request_id: { type: string }
+        routines:
+          type: array
+          items: { $ref: '#/components/schemas/Routine' }
+
+    AppleSearchResponse:
+      type: object
+      required: [query, types, results]
+      properties:
+        query: { type: string }
+        types:
+          type: array
+          items: { type: string }
+        results:
+          type: object
+          additionalProperties:
+            type: array
+            items: { $ref: '#/components/schemas/AppleResource' }
+        totals:
+          type: object
+          additionalProperties:
+            type: integer
+
+    AppleResource:
+      type: object
+      required:
+        [id, type, name, artist_name, album_name, artwork_url, duration_ms, release_date, genres, apple_url]
+      properties:
+        id: { type: string }
+        type: { type: string }
+        name: { type: string }
+        artist_name:
+          type: string
+          nullable: true
+        album_name:
+          type: string
+          nullable: true
+        artwork_url:
+          type: string
+          nullable: true
+        duration_ms:
+          type: integer
+          nullable: true
+        release_date:
+          type: string
+          nullable: true
+        genres:
+          type: array
+          items: { type: string }
+        apple_url:
+          type: string
+          nullable: true
+
+    AppleItemResponse:
+      type: object
+      required: [item]
+      properties:
+        item: { $ref: '#/components/schemas/AppleResource' }
+
+    AppleChartsResponse:
+      type: object
+      required: [charts]
+      properties:
+        charts:
+          type: object
+          additionalProperties:
+            type: array
+            items: { $ref: '#/components/schemas/AppleResource' }
+
+    AppleRecommendationsResponse:
+      type: object
+      required: [recommendations]
+      properties:
+        recommendations:
+          type: array
+          items: { $ref: '#/components/schemas/AppleResource' }
+
+    AppleSuggestionsResponse:
+      type: object
+      required: [query, kinds, types, terms, top_results]
+      properties:
+        query: { type: string }
+        kinds:
+          type: array
+          items: { type: string }
+        types:
+          type: array
+          items: { type: string }
+        terms:
+          type: array
+          items:
+            type: object
+            required: [search_term, display_term]
+            properties:
+              search_term: { type: string }
+              display_term: { type: string }
+        top_results:
+          type: array
+          items: { $ref: '#/components/schemas/AppleResource' }
+
+    AppleImportItem:
+      type: object
+      required: [apple_id, name, type]
+      properties:
+        apple_id: { type: string }
+        name: { type: string }
+        type: { type: string, enum: [album, playlist, song, artist, station] }
+        url:
+          type: string
+          nullable: true
+        artwork_url:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items: { type: string }
+
+    AppleImportRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AppleImportItem' }
+
+    AppleImportResult:
+      type: object
+      required: [handle_id, display_name, apple_id, sonos_playable, inactive_reason]
+      properties:
+        handle_id: { type: string }
+        display_name: { type: string }
+        apple_id: { type: string }
+        sonos_playable: { type: boolean }
+        inactive_reason: { type: string }
+
+    AppleImportError:
+      type: object
+      required: [apple_id, error]
+      properties:
+        apple_id: { type: string }
+        error: { type: string }
+
+    AppleImportResponse:
+      type: object
+      required: [imported, total_requested, total_imported, total_failed]
+      properties:
+        imported:
+          type: array
+          items: { $ref: '#/components/schemas/AppleImportResult' }
+        errors:
+          type: array
+          items: { $ref: '#/components/schemas/AppleImportError' }
+          nullable: true
+        total_requested: { type: integer }
+        total_imported: { type: integer }
+        total_failed: { type: integer }
+
+    AppleTokenStatusResponse:
+      type: object
+      required: [is_valid, expires_at, has_token]
+      properties:
+        is_valid: { type: boolean }
+        expires_at:
+          type: string
+          nullable: true
+        has_token: { type: boolean }
+
+    AppleTokenRefreshResponse:
+      type: object
+      required: [is_valid, expires_at, refreshed]
+      properties:
+        is_valid: { type: boolean }
+        expires_at: { type: string }
+        refreshed: { type: boolean }
+
+    AppleErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }
+
+    AuditEvent:
+      type: object
+      required: [event_id, timestamp, type, level, correlation, message, payload]
+      properties:
+        event_id: { type: string }
+        timestamp: { type: string, format: date-time }
+        type: { type: string }
+        level: { type: string }
+        correlation:
+          type: object
+          required: [request_id, routine_id, job_id, scene_execution_id, device_id]
+          properties:
+            request_id:
+              type: string
+              nullable: true
+            routine_id:
+              type: string
+              nullable: true
+            job_id:
+              type: string
+              nullable: true
+            scene_execution_id:
+              type: string
+              nullable: true
+            device_id:
+              type: string
+              nullable: true
+        message: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+
+    AuditEventsResponse:
+      type: object
+      required: [request_id, events, pagination]
+      properties:
+        request_id: { type: string }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/AuditEvent' }
+        pagination:
+          type: object
+          required: [total, limit, offset, has_more]
+          properties:
+            total: { type: integer }
+            limit: { type: integer }
+            offset: { type: integer }
+            has_more: { type: boolean }
+
+    AuditEventResponse:
+      type: object
+      required: [request_id, event]
+      properties:
+        request_id: { type: string }
+        event: { $ref: '#/components/schemas/AuditEvent' }
+
+    AuditEventCreateRequest:
+      type: object
+      required: [type, message]
+      properties:
+        type: { type: string }
+        level:
+          type: string
+          enum: [INFO, WARN, ERROR]
+        message: { type: string }
+        correlation:
+          type: object
+          properties:
+            request_id: { type: string }
+            routine_id: { type: string }
+            job_id: { type: string }
+            scene_execution_id: { type: string }
+            device_id: { type: string }
+        payload:
+          type: object
+          additionalProperties: true
+
+    # Music Content Types (Direct Playback)
+    MusicService:
+      type: string
+      enum: [spotify, apple_music, amazon_music]
+      description: Supported music streaming services
+
+    MusicContentType:
+      type: string
+      enum: [playlist, album, station, track]
+      description: Types of music content that can be played
+
+    QueueMode:
+      type: string
+      enum: [REPLACE_AND_PLAY, PLAY_NEXT, ADD_TO_END, QUEUE_ONLY]
+      default: REPLACE_AND_PLAY
+      description: |
+        How content is added to the Sonos queue:
+        - REPLACE_AND_PLAY: Clear queue, add content, play immediately (default)
+        - PLAY_NEXT: Insert after currently playing track
+        - ADD_TO_END: Append to end of queue
+        - QUEUE_ONLY: Add to queue without affecting playback state
+
+    GroupBehavior:
+      type: string
+      enum: [AUTO_REDIRECT, UNGROUP_AND_PLAY, REQUIRE_COORDINATOR]
+      default: AUTO_REDIRECT
+      description: |
+        How grouped speakers are handled:
+        - AUTO_REDIRECT: Automatically route commands to coordinator (default)
+        - UNGROUP_AND_PLAY: Ungroup the device first, then play on it alone
+        - REQUIRE_COORDINATOR: Return error if device is not coordinator
+
+    SonosFavoriteContent:
+      type: object
+      required: [type, favoriteId]
+      properties:
+        type:
+          type: string
+          enum: [sonos_favorite]
+        favoriteId:
+          type: string
+          description: Sonos favorite ID (e.g., "FV:2/34")
+
+    DirectContent:
+      type: object
+      required: [type, service, contentType, contentId, title]
+      properties:
+        type:
+          type: string
+          enum: [direct]
+        service:
+          $ref: '#/components/schemas/MusicService'
+        contentType:
+          $ref: '#/components/schemas/MusicContentType'
+        contentId:
+          type: string
+          description: Service-specific content ID (e.g., Spotify playlist ID)
+        title:
+          type: string
+          description: Display title for UI
+        artworkUrl:
+          type: string
+          format: uri
+          description: Optional artwork URL
+
+    MusicContent:
+      oneOf:
+        - $ref: '#/components/schemas/SonosFavoriteContent'
+        - $ref: '#/components/schemas/DirectContent'
+      discriminator:
+        propertyName: type
+        mapping:
+          sonos_favorite: '#/components/schemas/SonosFavoriteContent'
+          direct: '#/components/schemas/DirectContent'
+
+    PlayContentRequest:
+      type: object
+      required: [content]
+      properties:
+        device_id:
+          type: string
+          description: Device ID (from device-registry)
+        ip:
+          type: string
+          description: Device IP address (alternative to device_id)
+        content:
+          $ref: '#/components/schemas/MusicContent'
+        queue_mode:
+          $ref: '#/components/schemas/QueueMode'
+        group_behavior:
+          $ref: '#/components/schemas/GroupBehavior'
+
+    PlayContentResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required: [device_id, queue_mode, group_behavior, was_ungrouped, started_at]
+          properties:
+            device_id: { type: string }
+            queue_mode: { $ref: '#/components/schemas/QueueMode' }
+            group_behavior: { $ref: '#/components/schemas/GroupBehavior' }
+            was_ungrouped: { type: boolean }
+            coordinator_id: { type: string }
+            started_at: { type: string, format: date-time }
+            service: { type: string }
+            content_type: { type: string }
+            content_id: { type: string }
+            title: { type: string }
+            favorite_id: { type: string }
+
+    SonosPlaybackActionRequest:
+      type: object
+      required: [device_id]
+      properties:
+        device_id: { type: string }
+
+    SonosPlaybackActionResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required: [device_id, action]
+          properties:
+            device_id: { type: string }
+            action: { type: string }
+            stopped_at: { type: string, format: date-time }
+            paused_at: { type: string, format: date-time }
+            resumed_at: { type: string, format: date-time }
+            skipped_at: { type: string, format: date-time }
+
+    SonosPlaybackStateResponse:
+      type: object
+      required: [request_id, playback_state]
+      properties:
+        request_id: { type: string }
+        playback_state:
+          type: object
+          required: [device_id, state, status, speed]
+          properties:
+            device_id: { type: string }
+            state: { type: string }
+            status: { type: string }
+            speed: { type: string }
+
+    SonosNowPlayingResponse:
+      type: object
+      required: [request_id, now_playing]
+      properties:
+        request_id: { type: string }
+        now_playing:
+          type: object
+          required: [groups, total_groups]
+          properties:
+            groups:
+              type: array
+              items: { $ref: '#/components/schemas/SonosGroupPlayback' }
+            total_groups: { type: integer }
+
+    SonosGroupPlayback:
+      type: object
+      required: [coordinator_id, room_name, member_rooms, playback]
+      properties:
+        coordinator_id: { type: string }
+        room_name: { type: string }
+        member_rooms:
+          type: array
+          items: { type: string }
+        playback:
+          type: object
+          required: [state, volume, muted, track, container]
+          properties:
+            state: { type: string }
+            volume: { type: integer }
+            muted: { type: boolean }
+            track:
+              allOf:
+                - $ref: '#/components/schemas/SonosTrack'
+              nullable: true
+            container:
+              allOf:
+                - $ref: '#/components/schemas/SonosContainer'
+              nullable: true
+            isTV: { type: boolean }
+
+    SonosTrack:
+      type: object
+      required:
+        [
+          title,
+          artist,
+          album,
+          album_art_uri,
+          duration_seconds,
+          position_seconds,
+          source,
+          service_name,
+          service_logo_url
+        ]
+      properties:
+        title: { type: string }
+        artist:
+          type: string
+          nullable: true
+        album:
+          type: string
+          nullable: true
+        album_art_uri:
+          type: string
+          nullable: true
+        duration_seconds:
+          type: integer
+          nullable: true
+        position_seconds:
+          type: integer
+          nullable: true
+        source: { type: string }
+        service_name:
+          type: string
+          nullable: true
+        service_logo_url:
+          type: string
+          nullable: true
+
+    SonosContainer:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string }
+        type: { type: string }
+
+    SonosPlayRequest:
+      type: object
+      properties:
+        coordinator_device_id: { type: string }
+        ip: { type: string }
+
+    SonosPlayResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required: [ip, started_at]
+          properties:
+            coordinator_device_id:
+              type: string
+              nullable: true
+            ip: { type: string }
+            started_at: { type: string, format: date-time }
+
+    SonosPlayFavoriteRequest:
+      type: object
+      required: [favorite_id]
+      properties:
+        device_id: { type: string }
+        ip: { type: string }
+        favorite_id: { type: string }
+        group_behavior: { $ref: '#/components/schemas/GroupBehavior' }
+
+    SonosPlayFavoriteResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required:
+            [
+              device_id,
+              favorite_id,
+              favorite_title,
+              content_type,
+              service_logo_url,
+              started_at,
+              was_ungrouped
+            ]
+          properties:
+            device_id: { type: string }
+            favorite_id: { type: string }
+            favorite_title: { type: string }
+            content_type: { type: string }
+            service_logo_url: { type: string }
+            started_at: { type: string, format: date-time }
+            was_ungrouped: { type: boolean }
+
+    SonosVolumeRequest:
+      type: object
+      required: [device_id, volume]
+      properties:
+        device_id: { type: string }
+        volume: { type: integer }
+        ramp:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            duration_ms: { type: integer }
+            curve: { type: string, enum: [linear, ease-in, ease-out] }
+
+    SonosVolumeResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required:
+            [device_id, volume, previous_volume, ramped, all_succeeded, succeeded_count, failed_count]
+          properties:
+            device_id: { type: string }
+            volume: { type: integer }
+            previous_volume: { type: integer }
+            ramped: { type: boolean }
+            all_succeeded: { type: boolean }
+            succeeded_count: { type: integer }
+            failed_count: { type: integer }
+
+    SonosVolumeSetRequest:
+      type: object
+      required: [device_id, level]
+      properties:
+        device_id: { type: string }
+        level: { type: integer }
+
+    SonosVolumeSetResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required:
+            [device_id, level, previous_level, all_succeeded, succeeded_count, failed_count]
+          properties:
+            device_id: { type: string }
+            level: { type: integer }
+            previous_level: { type: integer }
+            all_succeeded: { type: boolean }
+            succeeded_count: { type: integer }
+            failed_count: { type: integer }
+
+    SonosVolumeRampRequest:
+      type: object
+      required: [device_id, target_level]
+      properties:
+        device_id: { type: string }
+        target_level: { type: integer }
+        duration_ms: { type: integer }
+        curve: { type: string, enum: [linear, ease-in, ease-out] }
+
+    SonosVolumeRampResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required:
+            [
+              device_id,
+              start_level,
+              target_level,
+              duration_ms,
+              curve,
+              all_succeeded,
+              succeeded_count,
+              failed_count
+            ]
+          properties:
+            device_id: { type: string }
+            start_level: { type: integer }
+            target_level: { type: integer }
+            duration_ms: { type: integer }
+            curve: { type: string }
+            all_succeeded: { type: boolean }
+            succeeded_count: { type: integer }
+            failed_count: { type: integer }
+
+    SonosGroupsResponse:
+      type: object
+      required: [request_id, groups]
+      properties:
+        request_id: { type: string }
+        groups:
+          type: array
+          items:
+            type: object
+            required: [coordinator, members, member_count]
+            properties:
+              coordinator: { type: string }
+              members:
+                type: array
+                items:
+                  type: object
+                  required: [uuid, zone_name, is_coordinator]
+                  properties:
+                    uuid: { type: string }
+                    zone_name: { type: string }
+                    is_coordinator: { type: boolean }
+              member_count: { type: integer }
+        total_groups: { type: integer }
+
+    SonosGroupCreateRequest:
+      type: object
+      required: [coordinator_device_id]
+      properties:
+        coordinator_device_id: { type: string }
+        member_device_ids:
+          type: array
+          items: { type: string }
+
+    SonosGroupCreateResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required:
+            [coordinator_device_id, coordinator_uuid, coordinator_name, member_results, all_succeeded]
+          properties:
+            coordinator_device_id: { type: string }
+            coordinator_uuid:
+              type: string
+              nullable: true
+            coordinator_name:
+              type: string
+              nullable: true
+            member_results:
+              type: array
+              items:
+                type: object
+                required: [device_id, success]
+                properties:
+                  device_id: { type: string }
+                  success: { type: boolean }
+                  error:
+                    type: string
+                    nullable: true
+            all_succeeded: { type: boolean }
+
+    SonosUngroupRequest:
+      type: object
+      properties:
+        device_ids:
+          type: array
+          items: { type: string }
+        ips:
+          type: array
+          items: { type: string }
+
+    SonosUngroupResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required: [ungroup_results, all_succeeded]
+          properties:
+            ungroup_results:
+              type: array
+              items:
+                type: object
+                required: [device_id, success]
+                properties:
+                  device_id: { type: string }
+                  success: { type: boolean }
+                  error:
+                    type: string
+                    nullable: true
+            all_succeeded: { type: boolean }
+
+    SonosPlayersResponse:
+      type: object
+      required: [request_id, players]
+      properties:
+        request_id: { type: string }
+        players:
+          type: array
+          items:
+            type: object
+            required: [uuid, zone_name, location, is_coordinator, group_coordinator]
+            properties:
+              uuid: { type: string }
+              zone_name: { type: string }
+              location: { type: string }
+              is_coordinator: { type: boolean }
+              group_coordinator: { type: string }
+        groups:
+          type: array
+          items:
+            type: object
+            required: [coordinator, member_count]
+            properties:
+              coordinator: { type: string }
+              member_count: { type: integer }
+
+    SonosPlayerStateResponse:
+      type: object
+      required: [request_id, player_state]
+      properties:
+        request_id: { type: string }
+        player_state:
+          type: object
+          required: [device_id, transport_state, transport_status, volume, muted, current_track]
+          properties:
+            device_id: { type: string }
+            transport_state: { type: string }
+            transport_status: { type: string }
+            volume: { type: integer }
+            muted: { type: boolean }
+            current_track:
+              type: object
+              nullable: true
+              required: [uri, duration, position, metadata]
+              properties:
+                uri: { type: string }
+                duration: { type: string }
+                position: { type: string }
+                metadata:
+                  type: string
+                  nullable: true
+
+    SonosTvStatusResponse:
+      type: object
+      required: [request_id, tv_status]
+      properties:
+        request_id: { type: string }
+        tv_status:
+          type: object
+          required:
+            [device_id, is_tv_active, confidence, source, transport_state, current_uri, last_checked_at]
+          properties:
+            device_id: { type: string }
+            is_tv_active: { type: boolean }
+            confidence: { type: string, enum: [HIGH, MEDIUM, LOW] }
+            source: { type: string, enum: [tv, line-in, music, idle] }
+            transport_state: { type: string }
+            current_uri:
+              type: string
+              nullable: true
+            last_checked_at: { type: string, format: date-time }
+
+    SonosFavoritesResponse:
+      type: object
+      required: [request_id, favorites]
+      properties:
+        request_id: { type: string }
+        favorites:
+          type: array
+          items:
+            type: object
+            required:
+              [
+                id,
+                parent_id,
+                title,
+                ordinal,
+                upnp_class,
+                content_type,
+                favorite_type,
+                service_name,
+                service_logo_url,
+                album_art_uri,
+                resource,
+                protocol_info,
+                resource_metadata
+              ]
+            properties:
+              id: { type: string }
+              parent_id: { type: string }
+              title: { type: string }
+              ordinal: { type: string }
+              upnp_class: { type: string }
+              content_type: { type: string }
+              favorite_type: { type: string }
+              service_name: { type: string }
+              service_logo_url: { type: string }
+              album_art_uri: { type: string }
+              resource: { type: string }
+              protocol_info: { type: string }
+              resource_metadata: { type: string }
+        total: { type: integer }
+        start: { type: integer }
+        count: { type: integer }
+
+    SonosAlarmsResponse:
+      type: object
+      required: [request_id, alarms]
+      properties:
+        request_id: { type: string }
+        alarms:
+          type: array
+          items:
+            type: object
+            required:
+              [
+                id,
+                start_time,
+                duration,
+                recurrence,
+                enabled,
+                room_uuid,
+                program_uri,
+                program_metadata,
+                play_mode,
+                volume,
+                include_linked_zones
+              ]
+            properties:
+              id: { type: string }
+              start_time: { type: string }
+              duration: { type: string }
+              recurrence: { type: string }
+              enabled: { type: boolean }
+              room_uuid: { type: string }
+              program_uri: { type: string }
+              program_metadata: { type: string }
+              play_mode: { type: string }
+              volume: { type: integer }
+              include_linked_zones: { type: boolean }
+        alarm_list_version: { type: string }
+    # Services Schemas
+    ServiceStatus:
+      type: string
+      enum: [ready, needs_bootstrap, not_supported]
+      description: |
+        Service availability status:
+        - ready: Service has credentials and is ready for playback
+        - needs_bootstrap: Service requires adding a favorite to extract credentials
+        - not_supported: Service doesn't support direct playback
+
+    ServiceInfo:
+      type: object
+      required: [service, display_name, status, supported_content_types, logo_url]
+      properties:
+        service:
+          type: string
+          description: Service identifier (spotify, apple_music, amazon_music)
+        display_name:
+          type: string
+          description: Human-readable service name
+        status:
+          $ref: '#/components/schemas/ServiceStatus'
+        supported_content_types:
+          type: array
+          items:
+            type: string
+          description: Content types this service supports (playlist, album, station, track)
+        logo_url:
+          type: string
+          description: URL to service logo image
+        remediation:
+          type: string
+          description: Instructions for enabling the service (if status is needs_bootstrap)
+
+    ServicesListResponse:
+      type: object
+      required: [request_id, services]
+      properties:
+        request_id: { type: string }
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceInfo'
+
+    ServiceHealthResponse:
+      type: object
+      required: [request_id, service_health]
+      properties:
+        request_id: { type: string }
+        service_health:
+          type: object
+          required: [service, healthy, credentials_valid, status, supported_content_types]
+          properties:
+            service: { type: string }
+            healthy: { type: boolean }
+            credentials_valid: { type: boolean }
+            status: { $ref: '#/components/schemas/ServiceStatus' }
+            supported_content_types:
+              type: array
+              items: { type: string }
+            remediation: { type: string }
+
+    # Routine Supporting Schemas
+    RoutineSpeaker:
+      type: object
+      required: [device_id]
+      properties:
+        device_id:
+          type: string
+          description: Device ID (UUID v5 based on UDN)
+        volume:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Target volume (0-100)
+
+    RoutineSpeakerOutput:
+      type: object
+      required: [device_id, volume, room_name]
+      properties:
+        device_id: { type: string }
+        volume:
+          type: integer
+          nullable: true
+        room_name:
+          type: string
+          nullable: true
+
+    RoutineConstraintsInput:
+      type: object
+      properties:
+        arc_tv_policy:
+          type: string
+          enum: [SKIP, USE_FALLBACK, ALWAYS_PLAY, USE_PLAYBASE, WAIT]
+          description: What to do if Arc TV is active
+
+    RoutineConstraints:
+      type: object
+      required: [arc_tv_policy]
+      properties:
+        arc_tv_policy:
+          type: string
+          nullable: true
+
+    RoutineDirectMusicContent:
+      type: object
+      required: [type, service, content_type, content_id, title]
+      properties:
+        type: { type: string, enum: [direct] }
+        service: { type: string, enum: [apple_music, spotify] }
+        content_type: { type: string, enum: [playlist, album, station, track] }
+        content_id: { type: string }
+        title: { type: string }
+        artwork_url:
+          type: string
+          nullable: true
+
+    RoutineMusicPolicyFixed:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [FIXED] }
+        sonos_favorite_id:
+          type: string
+          nullable: true
+        sonos_favorite_name:
+          type: string
+          nullable: true
+        sonos_favorite_artwork_url:
+          type: string
+          nullable: true
+        sonos_favorite_service_logo_url:
+          type: string
+          nullable: true
+        sonos_favorite_service_name:
+          type: string
+          nullable: true
+        music_content:
+          allOf:
+            - $ref: '#/components/schemas/RoutineDirectMusicContent'
+          nullable: true
+
+    RoutineMusicPolicySet:
+      type: object
+      required: [type, set_id]
+      properties:
+        type: { type: string, enum: [ROTATION, SHUFFLE] }
+        set_id: { type: string }
+        no_repeat_window_minutes:
+          type: integer
+          nullable: true
+        fallback_behavior:
+          type: string
+          nullable: true
+
+    RoutineMusicPolicy:
+      oneOf:
+        - $ref: '#/components/schemas/RoutineMusicPolicyFixed'
+        - $ref: '#/components/schemas/RoutineMusicPolicySet'
+
+    RoutineMusicSetSummary:
+      type: object
+      required: [name, artwork_url, service_logo_url, service_name]
+      properties:
+        name:
+          type: string
+          nullable: true
+        artwork_url:
+          type: string
+          nullable: true
+        service_logo_url:
+          type: string
+          nullable: true
+        service_name:
+          type: string
+          nullable: true
+
+    TVRoutingSettings:
+      type: object
+      required: [enabled, default_fallback_device_id, default_policy]
+      properties:
+        enabled: { type: boolean }
+        default_fallback_device_id:
+          type: string
+          nullable: true
+        default_policy:
+          type: string
+          enum: [SKIP, USE_FALLBACK, ALWAYS_PLAY]
+
+    TVRoutingSettingsUpdateRequest:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        default_fallback_device_id:
+          type: string
+          nullable: true
+        default_policy:
+          type: string
+          enum: [SKIP, USE_FALLBACK, ALWAYS_PLAY]
+
+    TVRoutingSettingsResponse:
+      type: object
+      required: [request_id, settings]
+      properties:
+        request_id: { type: string }
+        settings: { $ref: '#/components/schemas/TVRoutingSettings' }
+
+    TemplateSuggestedSpeaker:
+      type: object
+      required: [room]
+      properties:
+        room: { type: string }
+        volume:
+          type: integer
+          nullable: true
+
+    TemplateMusicPolicyFixed:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [FIXED] }
+        sonos_favorite_id:
+          type: string
+          nullable: true
+
+    TemplateMusicPolicySet:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [ROTATION, SHUFFLE] }
+        set_id:
+          type: string
+          nullable: true
+        no_repeat_window_minutes:
+          type: integer
+          nullable: true
+        fallback_behavior:
+          type: string
+          nullable: true
+
+    TemplateMusicPolicy:
+      oneOf:
+        - $ref: '#/components/schemas/TemplateMusicPolicyFixed'
+        - $ref: '#/components/schemas/TemplateMusicPolicySet'
+
+    TemplateVisualStyle:
+      type: object
+      required: [icon, image_name, image_url, gradient_colors, accent_color]
+      properties:
+        icon: { type: string }
+        image_name: { type: string }
+        image_url: { type: string }
+        gradient_colors:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { type: string }
+        accent_color: { type: string }
+
+    RoutineTemplate:
+      type: object
+      required:
+        [
+          template_id,
+          name,
+          description,
+          category,
+          schedule,
+          timezone,
+          suggested_speakers,
+          music_policy,
+          holiday_behavior,
+          arc_tv_policy,
+          visual_style
+        ]
+      properties:
+        template_id: { type: string }
+        name: { type: string }
+        description:
+          type: string
+          nullable: true
+        category: { type: string }
+        schedule: { $ref: '#/components/schemas/Schedule' }
+        timezone: { type: string }
+        suggested_speakers:
+          type: array
+          items: { $ref: '#/components/schemas/TemplateSuggestedSpeaker' }
+        music_policy:
+          allOf:
+            - $ref: '#/components/schemas/TemplateMusicPolicy'
+          nullable: true
+        holiday_behavior: { type: string }
+        arc_tv_policy: { type: string }
+        visual_style: { $ref: '#/components/schemas/TemplateVisualStyle' }
+
+    RoutineTemplatesResponse:
+      type: object
+      required: [templates]
+      properties:
+        templates:
+          type: array
+          items: { $ref: '#/components/schemas/RoutineTemplate' }
+
+    RoutineTemplateResponse:
+      type: object
+      required: [template]
+      properties:
+        template: { $ref: '#/components/schemas/RoutineTemplate' }
+
+    Routine:
+      type: object
+      required:
+        [
+          routine_id,
+          name,
+          enabled,
+          timezone,
+          scene_id,
+          schedule,
+          holiday_behavior,
+          speakers,
+          music_policy,
+          music_set,
+          constraints,
+          skip_next,
+          template_id,
+          created_at,
+          updated_at
+        ]
+      properties:
+        routine_id: { type: string }
+        name: { type: string }
+        enabled: { type: boolean }
+        timezone: { type: string }
+        scene_id: { type: string }
+        schedule: { $ref: '#/components/schemas/Schedule' }
+        holiday_behavior: { type: string }
+        speakers:
+          type: array
+          items: { $ref: '#/components/schemas/RoutineSpeakerOutput' }
+        music_policy: { $ref: '#/components/schemas/RoutineMusicPolicy' }
+        music_set:
+          allOf:
+            - $ref: '#/components/schemas/RoutineMusicSetSummary'
+          nullable: true
+        constraints: { $ref: '#/components/schemas/RoutineConstraints' }
+        skip_next: { type: boolean }
+        template_id:
+          type: string
+          nullable: true
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ExecutionConstraints:
+      type: object
+      properties:
+        arc_tv_policy:
+          type: string
+          enum: [SKIP, USE_FALLBACK, ALWAYS_PLAY, USE_PLAYBASE, WAIT]
+          description: What to do if Arc TV is active
+
+    MusicPolicy:
+      description: |
+        Music selection policy for routines. Supports three modes:
+        - FIXED: Play the same content every time
+        - ROTATION: Cycle through a set in order
+        - SHUFFLE: Random selection from a set
+      oneOf:
+        - $ref: '#/components/schemas/FixedMusicPolicy'
+        - $ref: '#/components/schemas/SetMusicPolicy'
+      discriminator:
+        propertyName: type
+        mapping:
+          FIXED: '#/components/schemas/FixedMusicPolicy'
+          ROTATION: '#/components/schemas/SetMusicPolicy'
+          SHUFFLE: '#/components/schemas/SetMusicPolicy'
+
+    FixedMusicPolicy:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [FIXED]
+        sonos_favorite_id:
+          type: string
+          deprecated: true
+          description: |
+            DEPRECATED - Use music_content instead.
+            Direct reference to Sonos favorite (e.g., 'FV:2/34')
+        music_content:
+          $ref: '#/components/schemas/MusicContent'
+          description: Music content to play (preferred)
+        sonos_favorite_name:
+          type: string
+          description: Display name (for UI)
+        sonos_favorite_artwork_url:
+          type: string
+          format: uri
+          description: Artwork URL (for UI)
+        sonos_favorite_service_logo_url:
+          type: string
+          format: uri
+          description: Service logo URL (e.g., Spotify logo)
+        sonos_favorite_service_name:
+          type: string
+          description: Service name (e.g., "Spotify")
+
+    SetMusicPolicy:
+      type: object
+      required: [type, set_id]
+      properties:
+        type:
+          type: string
+          enum: [ROTATION, SHUFFLE]
+        set_id:
+          type: string
+          description: Reference to custom set in music-catalog
+        no_repeat_window_minutes:
+          type: integer
+          minimum: 0
+          description: Minutes before allowing repeat of same content
+        fallback_behavior:
+          type: string
+          enum: [RELAX_WINDOW, SKIP_ROUTINE]
+          description: What to do when no non-recent content is available
+
+    # Music Set Schemas
+    SelectionPolicy:
+      type: string
+      enum: [ROTATION, SHUFFLE]
+      description: How items are selected from a set
+
+    MusicSet:
+      type: object
+      required:
+        [
+          set_id,
+          name,
+          selection_policy,
+          current_index,
+          created_at,
+          updated_at,
+          item_count,
+          service_logo_urls,
+          service_names
+        ]
+      properties:
+        set_id:
+          type: string
+        name:
+          type: string
+        selection_policy:
+          $ref: '#/components/schemas/SelectionPolicy'
+        current_index:
+          type: integer
+          description: Current position for ROTATION policy
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        item_count:
+          type: integer
+        service_logo_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+          nullable: true
+          description: Aggregated unique service logos from all items
+        service_names:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Aggregated unique service names from all items
+
+    SetItem:
+      type: object
+      required:
+        [
+          sonos_favorite_id,
+          content_type,
+          music_content,
+          position,
+          added_at,
+          service_logo_url,
+          service_name,
+          display_name,
+          artwork_url
+        ]
+      properties:
+        sonos_favorite_id:
+          type: string
+          nullable: true
+          description: Legacy field (null for direct content)
+        content_type:
+          type: string
+        music_content:
+          $ref: '#/components/schemas/MusicContentApi'
+          description: Music content reference (preferred)
+        position:
+          type: integer
+          description: Position in the set
+        added_at:
+          type: string
+          format: date-time
+        service_logo_url:
+          type: string
+          format: uri
+          nullable: true
+        service_name:
+          type: string
+          nullable: true
+        display_name:
+          type: string
+          nullable: true
+        artwork_url:
+          type: string
+          format: uri
+          nullable: true
+
+    MusicSetsResponse:
+      type: object
+      required: [sets]
+      properties:
+        sets:
+          type: array
+          items:
+            $ref: '#/components/schemas/MusicSet'
+
+    MusicSetResponse:
+      type: object
+      required: [set_id, name, selection_policy, current_index, created_at, updated_at]
+      properties:
+        set_id:
+          type: string
+        name:
+          type: string
+        selection_policy:
+          $ref: '#/components/schemas/SelectionPolicy'
+        current_index:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    MusicSetWithItemsResponse:
+      type: object
+      required:
+        [
+          set_id,
+          name,
+          selection_policy,
+          current_index,
+          created_at,
+          updated_at,
+          service_logo_urls,
+          service_names,
+          items
+        ]
+      properties:
+        set_id: { type: string }
+        name: { type: string }
+        selection_policy: { $ref: '#/components/schemas/SelectionPolicy' }
+        current_index: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        service_logo_urls:
+          type: array
+          items: { type: string }
+          nullable: true
+        service_names:
+          type: array
+          items: { type: string }
+          nullable: true
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SetItem' }
+
+    CreateMusicSetRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        selection_policy:
+          $ref: '#/components/schemas/SelectionPolicy'
+        sonos_favorite_ids:
+          type: array
+          items:
+            type: string
+          deprecated: true
+          description: DEPRECATED - Use sonos_favorites or items instead
+        sonos_favorites:
+          type: array
+          description: Favorites with service logo URLs
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: string
+              service_logo_url:
+                type: string
+                format: uri
+              service_name:
+                type: string
+        items:
+          type: array
+          description: Direct music content items (preferred for new sets)
+          items: { $ref: '#/components/schemas/SetItemInput' }
+
+    UpdateMusicSetRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        selection_policy:
+          $ref: '#/components/schemas/SelectionPolicy'
+
+    AddSetItemRequest:
+      type: object
+      required: [sonos_favorite_id]
+      properties:
+        sonos_favorite_id:
+          type: string
+        service_logo_url:
+          type: string
+          format: uri
+        service_name:
+          type: string
+
+    SetItemResponse:
+      type: object
+      required:
+        [set_id, sonos_favorite_id, content_type, music_content, position, added_at, service_logo_url, service_name, display_name, artwork_url]
+      properties:
+        set_id: { type: string }
+        sonos_favorite_id:
+          type: string
+          nullable: true
+        content_type: { type: string }
+        music_content: { $ref: '#/components/schemas/MusicContentApi' }
+        position: { type: integer }
+        added_at:
+          type: string
+          format: date-time
+        service_logo_url:
+          type: string
+          nullable: true
+        service_name:
+          type: string
+          nullable: true
+        display_name:
+          type: string
+          nullable: true
+        artwork_url:
+          type: string
+          nullable: true
+
+    SetItemInput:
+      type: object
+      required: [music_content]
+      properties:
+        music_content:
+          $ref: '#/components/schemas/MusicContentApi'
+        service_logo_url:
+          type: string
+          nullable: true
+        service_name:
+          type: string
+          nullable: true
+        display_name:
+          type: string
+          nullable: true
+        artwork_url:
+          type: string
+          nullable: true
+
+    ReorderItemsRequest:
+      type: object
+      required: [positions]
+      properties:
+        positions:
+          type: array
+          items:
+            type: object
+            required: [sonos_favorite_id, position]
+            properties:
+              sonos_favorite_id: { type: string }
+              position: { type: integer }
+
+    ReorderItemsResponse:
+      type: object
+      required: [success]
+      properties:
+        success: { type: boolean }
+
+    PlayMusicSetRequest:
+      type: object
+      required: [speaker_id]
+      properties:
+        speaker_id: { type: string }
+        volume: { type: integer }
+
+    PlayMusicSetResponse:
+      type: object
+      required: [request_id, result]
+      properties:
+        request_id: { type: string }
+        result:
+          type: object
+          required: [scene_id, scene_execution_id, music_content, status]
+          properties:
+            scene_id: { type: string }
+            scene_execution_id:
+              type: string
+              nullable: true
+            music_content:
+              $ref: '#/components/schemas/MusicContentApi'
+            status: { type: string }
+
+    MusicContentApi:
+      oneOf:
+        - $ref: '#/components/schemas/SonosFavoriteContentApi'
+        - $ref: '#/components/schemas/DirectContentApi'
+      discriminator:
+        propertyName: type
+        mapping:
+          sonos_favorite: '#/components/schemas/SonosFavoriteContentApi'
+          direct: '#/components/schemas/DirectContentApi'
+
+    SonosFavoriteContentApi:
+      type: object
+      required: [type, favorite_id]
+      properties:
+        type:
+          type: string
+          enum: [sonos_favorite]
+        favorite_id:
+          type: string
+
+    DirectContentApi:
+      type: object
+      required: [type, service, content_type, content_id, title]
+      properties:
+        type:
+          type: string
+          enum: [direct]
+        service:
+          $ref: '#/components/schemas/MusicService'
+        content_type:
+          $ref: '#/components/schemas/MusicContentType'
+        content_id:
+          type: string
+        title:
+          type: string
+        artwork_url:
+          type: string
+          nullable: true
+
+    MusicSearchItem:
+      type: object
+      required: [id, name, artist_name, album_name, artwork_url, content_type, duration_ms, track_count, provider, playback_uri]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        artist_name:
+          type: string
+          nullable: true
+        album_name:
+          type: string
+          nullable: true
+        artwork_url:
+          type: string
+          nullable: true
+        content_type: { type: string }
+        duration_ms:
+          type: integer
+          nullable: true
+        track_count:
+          type: integer
+          nullable: true
+        provider: { type: string }
+        playback_uri:
+          type: string
+          nullable: true
+
+    MusicSearchResponse:
+      type: object
+      required: [provider, query, results, pagination]
+      properties:
+        provider: { type: string }
+        query: { type: string }
+        results:
+          type: object
+          additionalProperties:
+            type: array
+            items: { $ref: '#/components/schemas/MusicSearchItem' }
+        pagination:
+          type: object
+          required: [limit, offset, total]
+          properties:
+            limit: { type: integer }
+            offset: { type: integer }
+            total: { type: integer }
+
+    MusicSuggestionsResponse:
+      type: object
+      required: [provider, query, terms, top_results]
+      properties:
+        provider: { type: string }
+        query: { type: string }
+        terms:
+          type: array
+          items:
+            type: object
+            required: [display_term, search_term]
+            properties:
+              display_term: { type: string }
+              search_term: { type: string }
+        top_results:
+          type: array
+          items:
+            type: object
+            required: [id, name, artist_name, album_name, artwork_url, content_type, duration_ms, provider]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              artist_name:
+                type: string
+                nullable: true
+              album_name:
+                type: string
+                nullable: true
+              artwork_url:
+                type: string
+                nullable: true
+              content_type: { type: string }
+              duration_ms:
+                type: integer
+                nullable: true
+              provider: { type: string }
+
+    MusicProvidersResponse:
+      type: object
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          items:
+            type: object
+            required: [name, display_name, supported_types, supports_suggestions]
+            properties:
+              name: { type: string }
+              display_name: { type: string }
+              supported_types:
+                type: array
+                items: { type: string }
+              supports_suggestions: { type: boolean }
+
+    # =========================================================================
+    # Sonos Cloud Schemas
+    # =========================================================================
+
+    SonosCloudAuthStartResponse:
+      type: object
+      required: [authUrl, state]
+      properties:
+        authUrl:
+          type: string
+          format: uri
+          description: Full OAuth authorization URL
+        state:
+          type: string
+          description: CSRF protection state token
+
+    SonosCloudAuthStatusResponse:
+      type: object
+      required: [connected]
+      properties:
+        connected:
+          type: boolean
+          description: Whether valid tokens exist
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the access token expires
+        expiresIn:
+          type: integer
+          description: Seconds until token expiry
+        scope:
+          type: string
+          description: OAuth scope granted
+        householdId:
+          type: string
+          description: Cached household ID
+        isExpired:
+          type: boolean
+          description: Whether token is expired
+        message:
+          type: string
+          description: Status message (when not connected)
+
+    SonosCloudAuthRefreshResponse:
+      type: object
+      required: [success, expiresAt, scope]
+      properties:
+        success:
+          type: boolean
+        expiresAt:
+          type: string
+          format: date-time
+        scope:
+          type: string
+
+    SonosCloudAuthDisconnectResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+
+    SonosCloudHousehold:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+
+    SonosCloudHouseholdsResponse:
+      type: object
+      required: [households]
+      properties:
+        households:
+          type: array
+          items:
+            $ref: '#/components/schemas/SonosCloudHousehold'
+
+    SonosCloudGroup:
+      type: object
+      required: [id, name, coordinatorId, playerIds]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        coordinatorId:
+          type: string
+        playerIds:
+          type: array
+          items:
+            type: string
+
+    SonosCloudGroupsResponse:
+      type: object
+      required: [householdId, groups]
+      properties:
+        householdId:
+          type: string
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/SonosCloudGroup'
+
+    SonosCloudPlayer:
+      type: object
+      required: [id, name, softwareVersion, deviceIds, capabilities]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        softwareVersion:
+          type: string
+        deviceIds:
+          type: array
+          items:
+            type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+
+    SonosCloudPlayersResponse:
+      type: object
+      required: [householdId, players]
+      properties:
+        householdId:
+          type: string
+        players:
+          type: array
+          items:
+            $ref: '#/components/schemas/SonosCloudPlayer'
+
+    SonosCloudAudioClipRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Clip name for identification
+        streamUrl:
+          type: string
+          format: uri
+          description: URL to audio file (mp3/wav) - must be publicly accessible
+        volume:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Volume level for the clip (0-100)
+        priority:
+          type: string
+          enum: [HIGH, LOW]
+          description: HIGH interrupts current audio, LOW can be interrupted
+
+    SonosCloudAudioClipResponse:
+      type: object
+      required: [success, clipId, name]
+      properties:
+        success:
+          type: boolean
+        clipId:
+          type: string
+          description: Sonos-assigned clip ID
+        name:
+          type: string
+        status:
+          type: string
+          description: Clip status from Sonos
+
+    SonosCloudErrorResponse:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+
+    # =========================================================================
+    # System Schemas
+    # =========================================================================
+
+    SystemInfoResponse:
+      type: object
+      required:
+        - hub_version
+        - uptime_seconds
+        - memory_mb
+        - cpu_percent
+        - sqlite_connected
+        - devices_online
+        - devices_total
+        - scheduler_running
+      properties:
+        hub_version:
+          type: string
+          description: Sonos Hub version
+        uptime_seconds:
+          type: number
+          description: Server uptime in seconds
+        memory_mb:
+          type: number
+          description: Memory usage in MB
+        cpu_percent:
+          type: number
+          description: CPU usage percentage (0-100)
+        redis_connected:
+          type: boolean
+          description: Legacy field - always true
+        sqlite_connected:
+          type: boolean
+          description: Whether SQLite database is connected
+        devices_online:
+          type: integer
+          description: Number of Sonos devices online
+        devices_total:
+          type: integer
+          description: Total Sonos devices discovered
+        scheduler_running:
+          type: boolean
+          description: Whether job scheduler is running
+        last_discovery:
+          type: string
+          format: date-time
+          nullable: true
+          description: Last device discovery timestamp

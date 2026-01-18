@@ -1,0 +1,46 @@
+# Binaries (root level only)
+/sonos-hub
+/sonos-hub-go
+
+# Go build artifacts
+/bin/
+/pkg/
+/coverage.out
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go cache directories
+.gocache/
+.gomodcache/
+
+# Air hot reload
+/tmp/
+
+# Database
+/data/
+*.db
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# IDE
+/.idea/
+/.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude local config
+.claude/
+
+# Reports and temporary files
+*.json
+!package.json

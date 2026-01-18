@@ -1,0 +1,23 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/main ./cmd/sonos-hub"
+  bin = "./tmp/main"
+  full_bin = "./tmp/main"
+  include_ext = ["go"]
+  exclude_dir = ["assets", "tmp", "vendor", "data", ".git", ".gomodcache", ".gocache", "tests"]
+  exclude_regex = ["_test\\.go$"]
+  delay = 1000
+
+[log]
+  time = false
+
+[color]
+  main = "cyan"
+  watcher = "magenta"
+  build = "yellow"
+  runner = "green"
+
+[misc]
+  clean_on_exit = true
