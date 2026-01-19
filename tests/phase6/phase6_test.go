@@ -14,27 +14,30 @@ import (
 	"github.com/strefethen/sonos-hub-go/internal/server"
 )
 
-type sceneResponse struct {
-	RequestID string         `json:"request_id"`
-	Scene     map[string]any `json:"scene"`
-}
+// Stripe-style: single resource returned directly with object field
+type sceneResponse map[string]any
 
+// Stripe-style list response
 type listScenesResponse struct {
-	RequestID  string           `json:"request_id"`
-	Scenes     []map[string]any `json:"scenes"`
-	Pagination map[string]any   `json:"pagination"`
+	Object  string           `json:"object"`
+	Data    []map[string]any `json:"data"`
+	HasMore bool             `json:"has_more"`
+	URL     string           `json:"url"`
 }
 
-type executeResponse struct {
-	RequestID string         `json:"request_id"`
-	Execution map[string]any `json:"execution"`
-}
+// Stripe-style: action result returned directly with object field
+type executeResponse map[string]any
 
+// Stripe-style list response
 type listExecutionsResponse struct {
-	RequestID  string           `json:"request_id"`
-	Executions []map[string]any `json:"executions"`
-	Pagination map[string]any   `json:"pagination"`
+	Object  string           `json:"object"`
+	Data    []map[string]any `json:"data"`
+	HasMore bool             `json:"has_more"`
+	URL     string           `json:"url"`
 }
+
+// Stripe-style: action result returned directly with object field
+type actionResponse map[string]any
 
 func setupTestServer(t *testing.T) (*httptest.Server, func()) {
 	t.Helper()
@@ -106,14 +109,14 @@ func TestSceneCRUD(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	require.NotEmpty(t, createResp.RequestID)
-	require.NotEmpty(t, createResp.Scene["scene_id"])
-	require.Equal(t, "Morning Music", createResp.Scene["name"])
-	require.Equal(t, "Wake up playlist", createResp.Scene["description"])
-	require.Equal(t, "ARC_FIRST", createResp.Scene["coordinator_preference"])
-	require.Equal(t, "PLAYBASE_IF_ARC_TV_ACTIVE", createResp.Scene["fallback_policy"])
+	require.Equal(t, "scene", createResp["object"])
+	require.NotEmpty(t, createResp["scene_id"])
+	require.Equal(t, "Morning Music", createResp["name"])
+	require.Equal(t, "Wake up playlist", createResp["description"])
+	require.Equal(t, "ARC_FIRST", createResp["coordinator_preference"])
+	require.Equal(t, "PLAYBASE_IF_ARC_TV_ACTIVE", createResp["fallback_policy"])
 
-	sceneID := createResp.Scene["scene_id"].(string)
+	sceneID := createResp["scene_id"].(string)
 
 	// Get scene
 	resp = doRequest(t, http.MethodGet, ts.URL+"/v1/scenes/"+sceneID, nil)
@@ -123,8 +126,8 @@ func TestSceneCRUD(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&getResp))
 	resp.Body.Close()
 
-	require.Equal(t, sceneID, getResp.Scene["scene_id"])
-	require.Equal(t, "Morning Music", getResp.Scene["name"])
+	require.Equal(t, sceneID, getResp["scene_id"])
+	require.Equal(t, "Morning Music", getResp["name"])
 
 	// Update scene
 	updatePayload := map[string]any{
@@ -137,9 +140,9 @@ func TestSceneCRUD(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&updateResp))
 	resp.Body.Close()
 
-	require.Equal(t, "Evening Music", updateResp.Scene["name"])
+	require.Equal(t, "Evening Music", updateResp["name"])
 	// Members should be preserved
-	members := updateResp.Scene["members"].([]any)
+	members := updateResp["members"].([]any)
 	require.Len(t, members, 2)
 
 	// List scenes
@@ -150,8 +153,8 @@ func TestSceneCRUD(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.Len(t, listResp.Scenes, 1)
-	require.Equal(t, 1, int(listResp.Pagination["total"].(float64)))
+	require.Equal(t, "list", listResp.Object)
+	require.Len(t, listResp.Data, 1)
 
 	// Delete scene
 	resp = doRequest(t, http.MethodDelete, ts.URL+"/v1/scenes/"+sceneID, nil)
@@ -215,7 +218,7 @@ func TestSceneExecuteCreatesExecution(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	sceneID := createResp.Scene["scene_id"].(string)
+	sceneID := createResp["scene_id"].(string)
 
 	// Execute scene
 	resp = doRequest(t, http.MethodPost, ts.URL+"/v1/scenes/"+sceneID+"/execute", nil)
@@ -225,12 +228,13 @@ func TestSceneExecuteCreatesExecution(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&execResp))
 	resp.Body.Close()
 
-	require.NotEmpty(t, execResp.Execution["scene_execution_id"])
-	require.Equal(t, sceneID, execResp.Execution["scene_id"])
-	require.Equal(t, "STARTING", execResp.Execution["status"])
-	require.False(t, execResp.Execution["idempotent"].(bool))
+	require.Equal(t, "scene_execution", execResp["object"])
+	require.NotEmpty(t, execResp["scene_execution_id"])
+	require.Equal(t, sceneID, execResp["scene_id"])
+	require.Equal(t, "STARTING", execResp["status"])
+	require.False(t, execResp["idempotent"].(bool))
 
-	_ = execResp.Execution["scene_execution_id"].(string)
+	_ = execResp["scene_execution_id"].(string)
 }
 
 func TestSceneExecuteIdempotency(t *testing.T) {
@@ -249,7 +253,7 @@ func TestSceneExecuteIdempotency(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	sceneID := createResp.Scene["scene_id"].(string)
+	sceneID := createResp["scene_id"].(string)
 
 	// Execute with idempotency key
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/scenes/"+sceneID+"/execute", bytes.NewBuffer(nil))
@@ -263,7 +267,7 @@ func TestSceneExecuteIdempotency(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&execResp1))
 	resp.Body.Close()
 
-	execID := execResp1.Execution["scene_execution_id"].(string)
+	execID := execResp1["scene_execution_id"].(string)
 
 	// Execute again with same idempotency key
 	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/v1/scenes/"+sceneID+"/execute", bytes.NewBuffer(nil))
@@ -278,7 +282,7 @@ func TestSceneExecuteIdempotency(t *testing.T) {
 	resp.Body.Close()
 
 	// Should return the same execution
-	require.Equal(t, execID, execResp2.Execution["scene_execution_id"])
+	require.Equal(t, execID, execResp2["scene_execution_id"])
 }
 
 func TestSceneExecutionsList(t *testing.T) {
@@ -297,7 +301,7 @@ func TestSceneExecutionsList(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	sceneID := createResp.Scene["scene_id"].(string)
+	sceneID := createResp["scene_id"].(string)
 
 	// Create multiple executions
 	for i := 0; i < 3; i++ {
@@ -314,8 +318,8 @@ func TestSceneExecutionsList(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.Len(t, listResp.Executions, 3)
-	require.Equal(t, 3, int(listResp.Pagination["total"].(float64)))
+	require.Equal(t, "list", listResp.Object)
+	require.Len(t, listResp.Data, 3)
 }
 
 func TestSceneStop(t *testing.T) {
@@ -334,7 +338,7 @@ func TestSceneStop(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	sceneID := createResp.Scene["scene_id"].(string)
+	sceneID := createResp["scene_id"].(string)
 
 	// Stop scene
 	resp = doRequest(t, http.MethodPost, ts.URL+"/v1/scenes/"+sceneID+"/stop", nil)
@@ -344,8 +348,9 @@ func TestSceneStop(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&stopResp))
 	resp.Body.Close()
 
-	require.Equal(t, sceneID, stopResp.Result["scene_id"])
-	require.True(t, stopResp.Result["all_succeeded"].(bool))
+	require.Equal(t, "scene_stop", stopResp["object"])
+	require.Equal(t, sceneID, stopResp["scene_id"])
+	require.True(t, stopResp["all_succeeded"].(bool))
 }
 
 func TestListScenesPagination(t *testing.T) {
@@ -371,9 +376,9 @@ func TestListScenesPagination(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.Len(t, listResp.Scenes, 3)
-	require.Equal(t, 5, int(listResp.Pagination["total"].(float64)))
-	require.True(t, listResp.Pagination["has_more"].(bool))
+	require.Equal(t, "list", listResp.Object)
+	require.Len(t, listResp.Data, 3)
+	require.True(t, listResp.HasMore)
 
 	// List with offset
 	resp = doRequest(t, http.MethodGet, ts.URL+"/v1/scenes?limit=3&offset=3", nil)
@@ -382,6 +387,6 @@ func TestListScenesPagination(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.Len(t, listResp.Scenes, 2)
-	require.False(t, listResp.Pagination["has_more"].(bool))
+	require.Len(t, listResp.Data, 2)
+	require.False(t, listResp.HasMore)
 }

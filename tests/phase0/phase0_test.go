@@ -20,26 +20,25 @@ type healthResponse struct {
 	Status string `json:"status"`
 }
 
+// Stripe-style response: flat with object field
 type pairStartResponse struct {
-	RequestID string         `json:"request_id"`
-	Result    map[string]any `json:"result"`
+	Object      string `json:"object"`
+	PairingHint string `json:"pairing_hint"`
 }
 
+// Stripe-style response: flat with object field
 type pairCompleteResponse struct {
-	RequestID string `json:"request_id"`
-	Tokens    struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresInSec int    `json:"expires_in_sec"`
-	} `json:"tokens"`
+	Object       string `json:"object"`
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresInSec int    `json:"expires_in_sec"`
 }
 
+// Stripe-style response: flat with object field
 type refreshResponse struct {
-	RequestID string `json:"request_id"`
-	Tokens    struct {
-		AccessToken  string `json:"access_token"`
-		ExpiresInSec int    `json:"expires_in_sec"`
-	} `json:"tokens"`
+	Object       string `json:"object"`
+	AccessToken  string `json:"access_token"`
+	ExpiresInSec int    `json:"expires_in_sec"`
 }
 
 func TestPhase0HealthAndAuth(t *testing.T) {
@@ -80,11 +79,11 @@ func TestPhase0HealthAndAuth(t *testing.T) {
 
 	var start pairStartResponse
 	require.NoError(t, json.NewDecoder(startResp.Body).Decode(&start))
-	pairingHint := start.Result["pairing_hint"].(string)
-	require.NotEmpty(t, pairingHint)
+	require.Equal(t, "pairing_start", start.Object)
+	require.NotEmpty(t, start.PairingHint)
 	require.NoError(t, startResp.Body.Close())
 
-	code := extractPairingCode(t, pairingHint)
+	code := extractPairingCode(t, start.PairingHint)
 
 	completePayload := map[string]any{
 		"pair_code":   code,
@@ -97,12 +96,13 @@ func TestPhase0HealthAndAuth(t *testing.T) {
 
 	var complete pairCompleteResponse
 	require.NoError(t, json.NewDecoder(completeResp.Body).Decode(&complete))
-	require.NotEmpty(t, complete.Tokens.AccessToken)
-	require.NotEmpty(t, complete.Tokens.RefreshToken)
+	require.Equal(t, "token_pair", complete.Object)
+	require.NotEmpty(t, complete.AccessToken)
+	require.NotEmpty(t, complete.RefreshToken)
 	require.NoError(t, completeResp.Body.Close())
 
 	refreshPayload := map[string]any{
-		"refresh_token": complete.Tokens.RefreshToken,
+		"refresh_token": complete.RefreshToken,
 	}
 	refreshBody, _ := json.Marshal(refreshPayload)
 	refreshResp, err := http.Post(server.URL+"/v1/auth/refresh", "application/json", bytes.NewReader(refreshBody))
@@ -111,7 +111,8 @@ func TestPhase0HealthAndAuth(t *testing.T) {
 
 	var refresh refreshResponse
 	require.NoError(t, json.NewDecoder(refreshResp.Body).Decode(&refresh))
-	require.NotEmpty(t, refresh.Tokens.AccessToken)
+	require.Equal(t, "token_refresh", refresh.Object)
+	require.NotEmpty(t, refresh.AccessToken)
 	require.NoError(t, refreshResp.Body.Close())
 }
 

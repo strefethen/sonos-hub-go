@@ -18,12 +18,15 @@ import (
 	"github.com/strefethen/sonos-hub-go/internal/server"
 )
 
+// Stripe-style list response for devices
 type devicesResponse struct {
-	Count   int `json:"count"`
-	Devices []struct {
+	Object  string `json:"object"`
+	Data    []struct {
 		DeviceID string `json:"device_id"`
 		RoomName string `json:"room_name"`
-	} `json:"devices"`
+	} `json:"data"`
+	HasMore bool   `json:"has_more"`
+	URL     string `json:"url"`
 }
 
 func TestPhase1Devices(t *testing.T) {
@@ -98,7 +101,7 @@ func waitForDevice(t *testing.T, client *http.Client, baseURL string, deviceID s
 		resp.Body.Close()
 		require.NoError(t, err)
 
-		for _, device := range payload.Devices {
+		for _, device := range payload.Data {
 			if device.RoomName == deviceID || device.DeviceID == deviceID {
 				return struct {
 					DeviceID string

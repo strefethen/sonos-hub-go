@@ -9,33 +9,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Music set response - standardized format with "set" key
-type setResponse struct {
-	RequestID string         `json:"request_id"`
-	Set       map[string]any `json:"set"`
-}
+// Stripe-style: single resource returned directly with object field
+type setResponse map[string]any
 
-// List sets response - standardized format with "sets" key
+// Stripe-style list response for sets
 type listSetsResponse struct {
-	RequestID string           `json:"request_id"`
-	Sets      []map[string]any `json:"sets"`
+	Object  string           `json:"object"`
+	Data    []map[string]any `json:"data"`
+	HasMore bool             `json:"has_more"`
+	URL     string           `json:"url"`
 }
 
+// Stripe-style list response for items
 type listItemsResponse struct {
-	RequestID  string           `json:"request_id"`
-	Items      []map[string]any `json:"items"`
-	Pagination map[string]any   `json:"pagination"`
+	Object  string           `json:"object"`
+	Data    []map[string]any `json:"data"`
+	HasMore bool             `json:"has_more"`
+	URL     string           `json:"url"`
 }
 
-type itemResponse struct {
-	RequestID string         `json:"request_id"`
-	Item      map[string]any `json:"item"`
-}
+// Stripe-style: single item returned directly with object field
+type itemResponse map[string]any
 
-type actionResponse struct {
-	RequestID string         `json:"request_id"`
-	Result    map[string]any `json:"result"`
-}
+// Note: actionResponse is defined in phase6_test.go (shared across package)
 
 // ==========================================================================
 // Set CRUD Tests
@@ -57,14 +53,14 @@ func TestMusicSetCRUD(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	// Fields at root level (no request_id or data wrapper - matches Node.js)
-	require.NotEmpty(t, createResp.Set["set_id"])
-	require.Equal(t, "Morning Playlist", createResp.Set["name"])
-	require.Equal(t, "ROTATION", createResp.Set["selection_policy"])
-	require.Equal(t, float64(0), createResp.Set["current_index"])
-	// Note: item_count not included in create response per Node.js format
+	// Stripe-style: resource returned directly with object field
+	require.Equal(t, "music_set", createResp["object"])
+	require.NotEmpty(t, createResp["set_id"])
+	require.Equal(t, "Morning Playlist", createResp["name"])
+	require.Equal(t, "ROTATION", createResp["selection_policy"])
+	require.Equal(t, float64(0), createResp["current_index"])
 
-	setID := createResp.Set["set_id"].(string)
+	setID := createResp["set_id"].(string)
 
 	// Get set
 	resp = doRequest(t, http.MethodGet, ts.URL+"/v1/music/sets/"+setID, nil)
@@ -74,8 +70,8 @@ func TestMusicSetCRUD(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&getResp))
 	resp.Body.Close()
 
-	require.Equal(t, setID, getResp.Set["set_id"])
-	require.Equal(t, "Morning Playlist", getResp.Set["name"])
+	require.Equal(t, setID, getResp["set_id"])
+	require.Equal(t, "Morning Playlist", getResp["name"])
 
 	// Update set - change name
 	updatePayload := map[string]any{
@@ -88,8 +84,8 @@ func TestMusicSetCRUD(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&updateResp))
 	resp.Body.Close()
 
-	require.Equal(t, "Evening Playlist", updateResp.Set["name"])
-	require.Equal(t, "ROTATION", updateResp.Set["selection_policy"]) // Unchanged
+	require.Equal(t, "Evening Playlist", updateResp["name"])
+	require.Equal(t, "ROTATION", updateResp["selection_policy"]) // Unchanged
 
 	// Update set - change policy
 	updatePayload = map[string]any{
@@ -101,8 +97,8 @@ func TestMusicSetCRUD(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&updateResp))
 	resp.Body.Close()
 
-	require.Equal(t, "Evening Playlist", updateResp.Set["name"])       // Unchanged
-	require.Equal(t, "SHUFFLE", updateResp.Set["selection_policy"]) // Changed
+	require.Equal(t, "Evening Playlist", updateResp["name"])       // Unchanged
+	require.Equal(t, "SHUFFLE", updateResp["selection_policy"]) // Changed
 
 	// Delete set
 	resp = doRequest(t, http.MethodDelete, ts.URL+"/v1/music/sets/"+setID, nil)
@@ -131,8 +127,8 @@ func TestMusicSetCreateWithShufflePolicy(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	require.Equal(t, "Shuffle Playlist", createResp.Set["name"])
-	require.Equal(t, "SHUFFLE", createResp.Set["selection_policy"])
+	require.Equal(t, "Shuffle Playlist", createResp["name"])
+	require.Equal(t, "SHUFFLE", createResp["selection_policy"])
 }
 
 func TestMusicSetList(t *testing.T) {
@@ -150,7 +146,7 @@ func TestMusicSetList(t *testing.T) {
 		resp.Body.Close()
 	}
 
-	// List all sets (no pagination per Node.js format)
+	// List all sets (Stripe-style list response)
 	resp := doRequest(t, http.MethodGet, ts.URL+"/v1/music/sets", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -159,10 +155,11 @@ func TestMusicSetList(t *testing.T) {
 	resp.Body.Close()
 
 	// Should return all 5 sets
-	require.Len(t, listResp.Sets, 5)
+	require.Equal(t, "list", listResp.Object)
+	require.Len(t, listResp.Data, 5)
 
 	// Verify each set has expected fields
-	for _, set := range listResp.Sets {
+	for _, set := range listResp.Data {
 		require.NotEmpty(t, set["set_id"])
 		require.NotEmpty(t, set["name"])
 		require.NotEmpty(t, set["selection_policy"])
@@ -189,7 +186,7 @@ func TestMusicSetItemManagement(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	setID := createResp.Set["set_id"].(string)
+	setID := createResp["set_id"].(string)
 
 	// Add item
 	addItemPayload := map[string]any{
@@ -203,9 +200,10 @@ func TestMusicSetItemManagement(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&addItemResp))
 	resp.Body.Close()
 
-	require.Equal(t, setID, addItemResp.Item["set_id"])
-	require.Equal(t, "favorite-001", addItemResp.Item["sonos_favorite_id"])
-	require.Equal(t, float64(0), addItemResp.Item["position"])
+	require.Equal(t, "set_item", addItemResp["object"])
+	require.Equal(t, setID, addItemResp["set_id"])
+	require.Equal(t, "favorite-001", addItemResp["sonos_favorite_id"])
+	require.Equal(t, float64(0), addItemResp["position"])
 
 	// Get items
 	resp = doRequest(t, http.MethodGet, ts.URL+"/v1/music/sets/"+setID+"/items", nil)
@@ -215,8 +213,9 @@ func TestMusicSetItemManagement(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listItemsResp))
 	resp.Body.Close()
 
-	require.Len(t, listItemsResp.Items, 1)
-	require.Equal(t, "favorite-001", listItemsResp.Items[0]["sonos_favorite_id"])
+	require.Equal(t, "list", listItemsResp.Object)
+	require.Len(t, listItemsResp.Data, 1)
+	require.Equal(t, "favorite-001", listItemsResp.Data[0]["sonos_favorite_id"])
 
 	// Add multiple items
 	for i := 2; i <= 4; i++ {
@@ -236,8 +235,7 @@ func TestMusicSetItemManagement(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listItemsResp))
 	resp.Body.Close()
 
-	require.Len(t, listItemsResp.Items, 4)
-	require.Equal(t, 4, int(listItemsResp.Pagination["total"].(float64)))
+	require.Len(t, listItemsResp.Data, 4)
 
 	// Remove item
 	resp = doRequest(t, http.MethodDelete, ts.URL+"/v1/music/sets/"+setID+"/items/favorite-002", nil)
@@ -251,7 +249,7 @@ func TestMusicSetItemManagement(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listItemsResp))
 	resp.Body.Close()
 
-	require.Len(t, listItemsResp.Items, 3)
+	require.Len(t, listItemsResp.Data, 3)
 }
 
 func TestMusicSetItemReorder(t *testing.T) {
@@ -270,7 +268,7 @@ func TestMusicSetItemReorder(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	setID := createResp.Set["set_id"].(string)
+	setID := createResp["set_id"].(string)
 
 	// Add items
 	items := []string{"favorite-A", "favorite-B", "favorite-C"}
@@ -291,12 +289,13 @@ func TestMusicSetItemReorder(t *testing.T) {
 	resp = doRequest(t, http.MethodPut, ts.URL+"/v1/music/sets/"+setID+"/items/reorder", reorderPayload)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// Reorder returns { request_id: "...", result: { success: true } }
+	// Reorder returns Stripe-style response with object field
 	var reorderResp actionResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&reorderResp))
 	resp.Body.Close()
 
-	require.True(t, reorderResp.Result["success"].(bool))
+	require.Equal(t, "reorder", reorderResp["object"])
+	require.True(t, reorderResp["success"].(bool))
 
 	// Verify new order by fetching items
 	resp = doRequest(t, http.MethodGet, ts.URL+"/v1/music/sets/"+setID+"/items", nil)
@@ -306,10 +305,10 @@ func TestMusicSetItemReorder(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.Len(t, listResp.Items, 3)
-	require.Equal(t, "favorite-C", listResp.Items[0]["sonos_favorite_id"])
-	require.Equal(t, "favorite-B", listResp.Items[1]["sonos_favorite_id"])
-	require.Equal(t, "favorite-A", listResp.Items[2]["sonos_favorite_id"])
+	require.Len(t, listResp.Data, 3)
+	require.Equal(t, "favorite-C", listResp.Data[0]["sonos_favorite_id"])
+	require.Equal(t, "favorite-B", listResp.Data[1]["sonos_favorite_id"])
+	require.Equal(t, "favorite-A", listResp.Data[2]["sonos_favorite_id"])
 }
 
 // ==========================================================================
@@ -332,7 +331,7 @@ func TestMusicSetPlayHistory(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	setID := createResp.Set["set_id"].(string)
+	setID := createResp["set_id"].(string)
 
 	// Get history for set (should be empty initially)
 	resp = doRequest(t, http.MethodGet, ts.URL+"/v1/music/sets/"+setID+"/history", nil)
@@ -342,8 +341,8 @@ func TestMusicSetPlayHistory(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&historyResp))
 	resp.Body.Close()
 
-	require.Len(t, historyResp.Items, 0)
-	require.Equal(t, 0, int(historyResp.Pagination["total"].(float64)))
+	require.Equal(t, "list", historyResp.Object)
+	require.Len(t, historyResp.Data, 0)
 }
 
 // ==========================================================================
@@ -382,7 +381,7 @@ func TestMusicSetItemNotFound(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	setID := createResp.Set["set_id"].(string)
+	setID := createResp["set_id"].(string)
 
 	// Try to remove non-existent item - should return 404
 	resp = doRequest(t, http.MethodDelete, ts.URL+"/v1/music/sets/"+setID+"/items/nonexistent-fav", nil)
@@ -461,7 +460,7 @@ func TestMusicSetUpdateInvalidPolicy(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	setID := createResp.Set["set_id"].(string)
+	setID := createResp["set_id"].(string)
 
 	// Update with invalid selection_policy - should return 400
 	updatePayload := map[string]any{
@@ -494,7 +493,7 @@ func TestMusicSetReorderWithInvalidItems(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	setID := createResp.Set["set_id"].(string)
+	setID := createResp["set_id"].(string)
 
 	// Add one item
 	addItemPayload := map[string]any{
@@ -536,7 +535,7 @@ func TestMusicSetReorderEmptyItems(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	setID := createResp.Set["set_id"].(string)
+	setID := createResp["set_id"].(string)
 
 	// Try to reorder with empty items - should return 400
 	reorderPayload := map[string]any{
@@ -563,7 +562,7 @@ func TestMusicSetAddItemMissingFields(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	setID := createResp.Set["set_id"].(string)
+	setID := createResp["set_id"].(string)
 
 	// Try to add item without sonos_favorite_id - should return 400
 	addItemPayload := map[string]any{

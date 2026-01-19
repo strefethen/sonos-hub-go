@@ -15,15 +15,15 @@ import (
 	"github.com/strefethen/sonos-hub-go/internal/server"
 )
 
-type auditEventResponse struct {
-	RequestID string         `json:"request_id"`
-	Event     map[string]any `json:"event"`
-}
+// Stripe-style: single resource returned directly with object field
+type auditEventResponse map[string]any
 
+// Stripe-style list response
 type auditEventsListResponse struct {
-	RequestID  string           `json:"request_id"`
-	Events     []map[string]any `json:"events"`
-	Pagination map[string]any   `json:"pagination"`
+	Object  string           `json:"object"`
+	Data    []map[string]any `json:"data"`
+	HasMore bool             `json:"has_more"`
+	URL     string           `json:"url"`
 }
 
 func setupAuditTestServer(t *testing.T) (*httptest.Server, func()) {
@@ -108,22 +108,22 @@ func TestAuditRecordEventWithAllFields(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	require.NotEmpty(t, createResp.RequestID)
-	require.NotEmpty(t, createResp.Event["event_id"])
-	require.Equal(t, "JOB_COMPLETED", createResp.Event["type"])
-	require.Equal(t, "INFO", createResp.Event["level"])
-	require.Equal(t, "Job completed successfully", createResp.Event["message"])
-	require.NotEmpty(t, createResp.Event["timestamp"])
+	require.NotEmpty(t, createResp["object"])
+	require.NotEmpty(t, createResp["event_id"])
+	require.Equal(t, "JOB_COMPLETED", createResp["type"])
+	require.Equal(t, "INFO", createResp["level"])
+	require.Equal(t, "Job completed successfully", createResp["message"])
+	require.NotEmpty(t, createResp["timestamp"])
 
 	// Verify correlation IDs in nested object
-	correlation := createResp.Event["correlation"].(map[string]any)
+	correlation := createResp["correlation"].(map[string]any)
 	require.Equal(t, jobID, correlation["job_id"])
 	require.Equal(t, routineID, correlation["routine_id"])
 	require.Equal(t, sceneExecID, correlation["scene_execution_id"])
 	require.Equal(t, deviceID, correlation["device_id"])
 
 	// Verify payload
-	payload := createResp.Event["payload"].(map[string]any)
+	payload := createResp["payload"].(map[string]any)
 	require.Equal(t, float64(1500), payload["duration_ms"])
 	require.Equal(t, float64(0), payload["retries"])
 }
@@ -143,9 +143,9 @@ func TestAuditRecordEventWithMinimalFields(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	require.NotEmpty(t, createResp.Event["event_id"])
-	require.Equal(t, "SYSTEM_STARTUP", createResp.Event["type"])
-	require.Equal(t, "System started", createResp.Event["message"])
+	require.NotEmpty(t, createResp["event_id"])
+	require.Equal(t, "SYSTEM_STARTUP", createResp["type"])
+	require.Equal(t, "System started", createResp["message"])
 }
 
 func TestAuditRecordEventDefaultLevelIsInfo(t *testing.T) {
@@ -164,7 +164,7 @@ func TestAuditRecordEventDefaultLevelIsInfo(t *testing.T) {
 	resp.Body.Close()
 
 	// Default level should be INFO
-	require.Equal(t, "INFO", createResp.Event["level"])
+	require.Equal(t, "INFO", createResp["level"])
 }
 
 func TestAuditRecordEventTimestampIsSet(t *testing.T) {
@@ -186,7 +186,7 @@ func TestAuditRecordEventTimestampIsSet(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	timestampStr := createResp.Event["timestamp"].(string)
+	timestampStr := createResp["timestamp"].(string)
 	timestamp, err := time.Parse(time.RFC3339, timestampStr)
 	require.NoError(t, err)
 
@@ -222,9 +222,8 @@ func TestAuditQueryAllEvents(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.GreaterOrEqual(t, len(listResp.Events), 3)
-	require.NotNil(t, listResp.Pagination)
-	require.GreaterOrEqual(t, int(listResp.Pagination["total"].(float64)), 3)
+	require.Equal(t, "list", listResp.Object)
+	require.GreaterOrEqual(t, len(listResp.Data), 3)
 }
 
 func TestAuditQueryWithTypeFilter(t *testing.T) {
@@ -251,8 +250,8 @@ func TestAuditQueryWithTypeFilter(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.GreaterOrEqual(t, len(listResp.Events), 1)
-	for _, event := range listResp.Events {
+	require.GreaterOrEqual(t, len(listResp.Data), 1)
+	for _, event := range listResp.Data {
 		require.Equal(t, "JOB_COMPLETED", event["type"])
 	}
 }
@@ -282,8 +281,8 @@ func TestAuditQueryWithLevelFilter(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.GreaterOrEqual(t, len(listResp.Events), 1)
-	for _, event := range listResp.Events {
+	require.GreaterOrEqual(t, len(listResp.Data), 1)
+	for _, event := range listResp.Data {
 		require.Equal(t, "ERROR", event["level"])
 	}
 }
@@ -312,7 +311,7 @@ func TestAuditQueryWithDateRangeFilter(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.GreaterOrEqual(t, len(listResp.Events), 1)
+	require.GreaterOrEqual(t, len(listResp.Data), 1)
 }
 
 func TestAuditQueryWithCorrelationIDFilters(t *testing.T) {
@@ -344,8 +343,8 @@ func TestAuditQueryWithCorrelationIDFilters(t *testing.T) {
 	var listResp auditEventsListResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
-	require.GreaterOrEqual(t, len(listResp.Events), 1)
-	for _, event := range listResp.Events {
+	require.GreaterOrEqual(t, len(listResp.Data), 1)
+	for _, event := range listResp.Data {
 		correlation := event["correlation"].(map[string]any)
 		require.Equal(t, jobID, correlation["job_id"])
 	}
@@ -355,8 +354,8 @@ func TestAuditQueryWithCorrelationIDFilters(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
-	require.GreaterOrEqual(t, len(listResp.Events), 1)
-	for _, event := range listResp.Events {
+	require.GreaterOrEqual(t, len(listResp.Data), 1)
+	for _, event := range listResp.Data {
 		correlation := event["correlation"].(map[string]any)
 		require.Equal(t, routineID, correlation["routine_id"])
 	}
@@ -366,8 +365,8 @@ func TestAuditQueryWithCorrelationIDFilters(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
-	require.GreaterOrEqual(t, len(listResp.Events), 1)
-	for _, event := range listResp.Events {
+	require.GreaterOrEqual(t, len(listResp.Data), 1)
+	for _, event := range listResp.Data {
 		correlation := event["correlation"].(map[string]any)
 		require.Equal(t, sceneExecID, correlation["scene_execution_id"])
 	}
@@ -377,8 +376,8 @@ func TestAuditQueryWithCorrelationIDFilters(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
-	require.GreaterOrEqual(t, len(listResp.Events), 1)
-	for _, event := range listResp.Events {
+	require.GreaterOrEqual(t, len(listResp.Data), 1)
+	for _, event := range listResp.Data {
 		correlation := event["correlation"].(map[string]any)
 		require.Equal(t, deviceID, correlation["device_id"])
 	}
@@ -407,9 +406,9 @@ func TestAuditQueryWithPagination(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.Len(t, listResp.Events, 3)
-	require.GreaterOrEqual(t, int(listResp.Pagination["total"].(float64)), 5)
-	require.True(t, listResp.Pagination["has_more"].(bool))
+	require.Equal(t, "list", listResp.Object)
+	require.Len(t, listResp.Data, 3)
+	require.True(t, listResp.HasMore)
 
 	// Query with offset
 	resp = doAuditRequest(t, http.MethodGet, ts.URL+"/v1/audit/events?limit=3&offset=3", nil)
@@ -418,8 +417,8 @@ func TestAuditQueryWithPagination(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.Len(t, listResp.Events, 2)
-	require.False(t, listResp.Pagination["has_more"].(bool))
+	require.Len(t, listResp.Data, 2)
+	require.False(t, listResp.HasMore)
 }
 
 func TestAuditQueryHasMoreFlag(t *testing.T) {
@@ -445,7 +444,7 @@ func TestAuditQueryHasMoreFlag(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.True(t, listResp.Pagination["has_more"].(bool))
+	require.True(t, listResp.HasMore)
 
 	// Query last page (offset=4, limit=2) - should NOT have more
 	resp = doAuditRequest(t, http.MethodGet, ts.URL+"/v1/audit/events?limit=2&offset=4", nil)
@@ -454,7 +453,7 @@ func TestAuditQueryHasMoreFlag(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.False(t, listResp.Pagination["has_more"].(bool))
+	require.False(t, listResp.HasMore)
 }
 
 // ==========================================================================
@@ -478,7 +477,7 @@ func TestAuditGetEventByID(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	eventID := createResp.Event["event_id"].(string)
+	eventID := createResp["event_id"].(string)
 
 	// Get the event by ID
 	resp = doAuditRequest(t, http.MethodGet, ts.URL+"/v1/audit/events/"+eventID, nil)
@@ -488,10 +487,10 @@ func TestAuditGetEventByID(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&getResp))
 	resp.Body.Close()
 
-	require.Equal(t, eventID, getResp.Event["event_id"])
-	require.Equal(t, "JOB_COMPLETED", getResp.Event["type"])
-	require.Equal(t, "INFO", getResp.Event["level"])
-	require.Equal(t, "Job completed successfully", getResp.Event["message"])
+	require.Equal(t, eventID, getResp["event_id"])
+	require.Equal(t, "JOB_COMPLETED", getResp["type"])
+	require.Equal(t, "INFO", getResp["level"])
+	require.Equal(t, "Job completed successfully", getResp["message"])
 }
 
 func TestAuditGetNonExistentEvent(t *testing.T) {
@@ -586,7 +585,7 @@ func TestAuditEventWithDifferentLevels(t *testing.T) {
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 		resp.Body.Close()
 
-		require.Equal(t, level, createResp.Event["level"])
+		require.Equal(t, level, createResp["level"])
 	}
 }
 
@@ -630,8 +629,8 @@ func TestAuditQueryCombinedFilters(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 
-	require.Len(t, listResp.Events, 1)
-	require.Equal(t, "JOB_COMPLETED", listResp.Events[0]["type"])
-	correlation := listResp.Events[0]["correlation"].(map[string]any)
+	require.Len(t, listResp.Data, 1)
+	require.Equal(t, "JOB_COMPLETED", listResp.Data[0]["type"])
+	correlation := listResp.Data[0]["correlation"].(map[string]any)
 	require.Equal(t, jobID, correlation["job_id"])
 }
