@@ -18,6 +18,7 @@ type PlayRequest struct {
 
 // PlayResponse represents the response from a play request
 type PlayResponse struct {
+	Object              string    `json:"object"`
 	CoordinatorDeviceID *string   `json:"coordinator_device_id,omitempty"`
 	IP                  string    `json:"ip"`
 	StartedAt           time.Time `json:"started_at"`
@@ -33,6 +34,7 @@ type PlayFavoriteRequest struct {
 
 // PlayFavoriteResponse represents the response from playing a favorite
 type PlayFavoriteResponse struct {
+	Object         string    `json:"object"`
 	DeviceID       string    `json:"device_id"`
 	FavoriteID     string    `json:"favorite_id"`
 	FavoriteTitle  string    `json:"favorite_title"`
@@ -53,6 +55,7 @@ type PlayContentRequest struct {
 
 // PlayContentResponse represents the response from playing content
 type PlayContentResponse struct {
+	Object        string    `json:"object"`
 	DeviceID      string    `json:"device_id"`
 	QueueMode     string    `json:"queue_mode"`
 	GroupBehavior string    `json:"group_behavior"`
@@ -143,6 +146,7 @@ func (s *PlayService) Play(ctx context.Context, req PlayRequest) (*PlayResponse,
 	}
 
 	response := &PlayResponse{
+		Object:    "play_action",
 		IP:        deviceIP,
 		StartedAt: time.Now().UTC(),
 	}
@@ -208,6 +212,7 @@ func (s *PlayService) PlayFavorite(ctx context.Context, req PlayFavoriteRequest)
 
 	// Build response
 	response := &PlayFavoriteResponse{
+		Object:        "play_favorite_action",
 		DeviceID:      deviceID,
 		FavoriteID:    req.FavoriteID,
 		FavoriteTitle: playable.Title,
@@ -331,6 +336,7 @@ func (s *PlayService) PlayContent(ctx context.Context, req PlayContentRequest) (
 
 	// Build response
 	response := &PlayContentResponse{
+		Object:        "play_content_action",
 		DeviceID:      deviceID,
 		QueueMode:     queueMode,
 		GroupBehavior: groupBehavior,

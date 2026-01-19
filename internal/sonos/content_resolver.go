@@ -46,6 +46,7 @@ type ValidationResult struct {
 
 // ServiceStatus represents the status of a music service
 type ServiceStatus struct {
+	Object                string   `json:"object"`
 	Service               string   `json:"service"`
 	DisplayName           string   `json:"display_name"`
 	Status                string   `json:"status"` // "ready", "needs_bootstrap", "not_supported"
@@ -326,6 +327,7 @@ func (e *CredentialExtractor) GetAllServiceStatuses(ctx context.Context, deviceI
 	for _, service := range knownServices {
 		status := e.GetServiceStatus(service)
 		serviceStatus := ServiceStatus{
+			Object:                "service_status",
 			Service:               service,
 			DisplayName:           serviceDisplayNames[service],
 			Status:                status,
@@ -769,11 +771,12 @@ func (r *ContentResolver) GetServiceCapabilities(deviceIP string) []ServiceStatu
 	ctx, cancel := context.WithTimeout(context.Background(), r.timeout)
 	defer cancel()
 
-	services := []string{"spotify", "apple_music", "amazon_music", "deezer", "tidal"}
+	services := []string{"spotify", "apple_music", "amazon_music"}
 	statuses := make([]ServiceStatus, 0, len(services))
 
 	for _, svc := range services {
 		status := ServiceStatus{
+			Object:  "service_status",
 			Service: svc,
 		}
 
@@ -809,6 +812,7 @@ func (r *ContentResolver) GetServiceHealth(service, deviceIP string) (*ServiceSt
 	defer cancel()
 
 	status := &ServiceStatus{
+		Object:  "service_status",
 		Service: service,
 	}
 
