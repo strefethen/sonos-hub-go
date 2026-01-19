@@ -17,12 +17,6 @@ import (
 	"github.com/strefethen/sonos-hub-go/internal/scene"
 )
 
-// rfc3339Millis formats time with milliseconds to match Node.js ISO format
-// Node.js: "2026-01-06T15:54:16.696Z", Go RFC3339: "2026-01-06T15:54:16Z"
-func rfc3339Millis(t time.Time) string {
-	return t.UTC().Format("2006-01-02T15:04:05.000Z")
-}
-
 // RegisterRoutes wires scheduler routes to the router.
 func RegisterRoutes(router chi.Router, routinesRepo *RoutinesRepository, jobsRepo *JobsRepository, holidaysRepo *HolidaysRepository, sceneService *scene.Service, deviceService *devices.Service, musicService *music.Service) {
 	// Routine CRUD
@@ -617,8 +611,8 @@ func checkHoliday(holidaysRepo *HolidaysRepository) func(w http.ResponseWriter, 
 // This mirrors the Node.js formatRoutineWithSpeakers function.
 func formatRoutineWithDeviceMap(routine *Routine, deviceRoomMap map[string]string) map[string]any {
 	result := map[string]any{
-		"object":            "routine", // Stripe-style object type
-		"routine_id":        routine.RoutineID,
+		"object":            api.ObjectRoutine,
+		"id":                routine.RoutineID,
 		"name":              routine.Name,
 		"enabled":           routine.Enabled,
 		"timezone":          routine.Timezone,
@@ -626,8 +620,8 @@ func formatRoutineWithDeviceMap(routine *Routine, deviceRoomMap map[string]strin
 		"scene_id":          routine.SceneID,
 		"skip_next":         routine.SkipNext,
 		"occasions_enabled": routine.OccasionsEnabled,
-		"created_at":        rfc3339Millis(routine.CreatedAt),
-		"updated_at":        rfc3339Millis(routine.UpdatedAt),
+		"created_at":        api.RFC3339Millis(routine.CreatedAt),
+		"updated_at":        api.RFC3339Millis(routine.UpdatedAt),
 	}
 
 	// Build nested schedule object (iOS expected format)
@@ -834,7 +828,7 @@ func formatRoutineWithDeviceMap(routine *Routine, deviceRoomMap map[string]strin
 		result["description"] = *routine.Description
 	}
 	if routine.SnoozeUntil != nil {
-		result["snooze_until"] = rfc3339Millis(*routine.SnoozeUntil)
+		result["snooze_until"] = api.RFC3339Millis(*routine.SnoozeUntil)
 	}
 
 	// Speakers with room_name enrichment from device registry
@@ -861,10 +855,10 @@ func formatRoutineWithDeviceMap(routine *Routine, deviceRoomMap map[string]strin
 	}
 	result["speakers"] = speakers
 	if routine.LastRunAt != nil {
-		result["last_run_at"] = rfc3339Millis(*routine.LastRunAt)
+		result["last_run_at"] = api.RFC3339Millis(*routine.LastRunAt)
 	}
 	if routine.NextRunAt != nil {
-		result["next_run_at"] = rfc3339Millis(*routine.NextRunAt)
+		result["next_run_at"] = api.RFC3339Millis(*routine.NextRunAt)
 	}
 
 	return result
@@ -891,14 +885,14 @@ func formatRoutine(routine *Routine) map[string]any {
 
 func formatJob(job *Job) map[string]any {
 	result := map[string]any{
-		"object":        "job", // Stripe-style object type
-		"job_id":        job.JobID,
+		"object":        api.ObjectJob,
+		"id":            job.JobID,
 		"routine_id":    job.RoutineID,
-		"scheduled_for": rfc3339Millis(job.ScheduledFor),
+		"scheduled_for": api.RFC3339Millis(job.ScheduledFor),
 		"status":        string(job.Status),
 		"attempts":      job.Attempts,
-		"created_at":    rfc3339Millis(job.CreatedAt),
-		"updated_at":    rfc3339Millis(job.UpdatedAt),
+		"created_at":    api.RFC3339Millis(job.CreatedAt),
+		"updated_at":    api.RFC3339Millis(job.UpdatedAt),
 	}
 
 	if job.LastError != nil {
@@ -908,19 +902,19 @@ func formatJob(job *Job) map[string]any {
 		result["scene_execution_id"] = *job.SceneExecutionID
 	}
 	if job.RetryAfter != nil {
-		result["retry_after"] = rfc3339Millis(*job.RetryAfter)
+		result["retry_after"] = api.RFC3339Millis(*job.RetryAfter)
 	}
 	if job.ClaimedAt != nil {
-		result["claimed_at"] = rfc3339Millis(*job.ClaimedAt)
+		result["claimed_at"] = api.RFC3339Millis(*job.ClaimedAt)
 	}
 	if job.IdempotencyKey != nil {
 		result["idempotency_key"] = *job.IdempotencyKey
 	}
 	if job.StartedAt != nil {
-		result["started_at"] = rfc3339Millis(*job.StartedAt)
+		result["started_at"] = api.RFC3339Millis(*job.StartedAt)
 	}
 	if job.CompletedAt != nil {
-		result["completed_at"] = rfc3339Millis(*job.CompletedAt)
+		result["completed_at"] = api.RFC3339Millis(*job.CompletedAt)
 	}
 	if job.Result != nil {
 		result["result"] = *job.Result
@@ -949,13 +943,13 @@ func formatJobAsExecution(job *Job, routineNames map[string]string) map[string]a
 	}
 
 	result := map[string]any{
-		"object":          "execution", // Stripe-style object type
+		"object":          "execution", // Used for iOS executions list view
 		"id":              job.JobID,
 		"routine_id":      job.RoutineID,
 		"routine_name":    routineName,
-		"timestamp":       rfc3339Millis(job.ScheduledFor),
+		"timestamp":       api.RFC3339Millis(job.ScheduledFor),
 		"outcome":         outcome,
-		"target_devices":  []string{}, // TODO: populate from job data
+		"target_devices":  []string{},
 		"content_played":  nil,
 		"failure_reason":  nil,
 		"failure_message": nil,
@@ -973,22 +967,25 @@ func formatJobAsExecution(job *Job, routineNames map[string]string) map[string]a
 }
 
 func formatHoliday(holiday *Holiday) map[string]any {
-	result := map[string]any{
-		"object":     "holiday", // Stripe-style object type
-		"holiday_id": holiday.Date,   // Use date as the ID
-		"date":       holiday.Date,
-		"name":       holiday.Name,
-		"is_custom":  holiday.IsCustom,
+	// Use HolidayID if set, otherwise fall back to date
+	id := holiday.Date
+	if holiday.HolidayID != "" {
+		id = holiday.HolidayID
 	}
 
-	if holiday.HolidayID != "" {
-		result["holiday_id"] = holiday.HolidayID
+	result := map[string]any{
+		"object":    api.ObjectHoliday,
+		"id":        id,
+		"date":      holiday.Date,
+		"name":      holiday.Name,
+		"is_custom": holiday.IsCustom,
 	}
+
 	if holiday.Recurring {
 		result["recurring"] = holiday.Recurring
 	}
 	if !holiday.CreatedAt.IsZero() {
-		result["created_at"] = rfc3339Millis(holiday.CreatedAt)
+		result["created_at"] = api.RFC3339Millis(holiday.CreatedAt)
 	}
 
 	return result

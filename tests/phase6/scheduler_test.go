@@ -124,7 +124,7 @@ func createTestScene(t *testing.T, ts *httptest.Server) string {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	return createResp["scene_id"].(string)
+	return createResp["id"].(string)
 }
 
 // ==========================================================================
@@ -157,7 +157,7 @@ func TestRoutineCRUD(t *testing.T) {
 	resp.Body.Close()
 
 	require.NotEmpty(t, createResp["object"])
-	require.NotEmpty(t, createResp["routine_id"])
+	require.NotEmpty(t, createResp["id"])
 	require.Equal(t, "Morning Alarm", createResp["name"])
 	require.Equal(t, sceneID, createResp["scene_id"])
 	require.Equal(t, "America/New_York", createResp["timezone"])
@@ -169,7 +169,7 @@ func TestRoutineCRUD(t *testing.T) {
 	require.Equal(t, "weekly", schedule["type"])
 	require.Equal(t, "07:30", schedule["time"])
 
-	routineID := createResp["routine_id"].(string)
+	routineID := createResp["id"].(string)
 
 	// Get routine
 	resp = doSchedulerRequest(t, http.MethodGet, ts.URL+"/v1/routines/"+routineID, nil)
@@ -179,7 +179,7 @@ func TestRoutineCRUD(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&getResp))
 	resp.Body.Close()
 
-	require.Equal(t, routineID, getResp["routine_id"])
+	require.Equal(t, routineID, getResp["id"])
 	require.Equal(t, "Morning Alarm", getResp["name"])
 
 	// Update routine
@@ -306,7 +306,7 @@ func TestEnableDisableRoutine(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	routineID := createResp["routine_id"].(string)
+	routineID := createResp["id"].(string)
 	require.Equal(t, true, createResp["enabled"])
 
 	// Disable routine
@@ -352,7 +352,7 @@ func TestSnoozeUnsnoozeRoutine(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	routineID := createResp["routine_id"].(string)
+	routineID := createResp["id"].(string)
 
 	// Snooze routine until tomorrow
 	snoozeUntil := time.Now().Add(24 * time.Hour).UTC()
@@ -401,7 +401,7 @@ func TestSkipNextRoutine(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	routineID := createResp["routine_id"].(string)
+	routineID := createResp["id"].(string)
 	require.Equal(t, false, createResp["skip_next"])
 
 	// Skip next occurrence
@@ -437,7 +437,7 @@ func TestTriggerRoutine(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	routineID := createResp["routine_id"].(string)
+	routineID := createResp["id"].(string)
 
 	// Trigger routine (manual execution)
 	resp = doSchedulerRequest(t, http.MethodPost, ts.URL+"/v1/routines/"+routineID+"/trigger", nil)
@@ -447,7 +447,7 @@ func TestTriggerRoutine(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&triggerResp))
 	resp.Body.Close()
 
-	require.NotEmpty(t, triggerResp["job_id"])
+	require.NotEmpty(t, triggerResp["id"])
 	require.Equal(t, routineID, triggerResp["routine_id"])
 	require.Equal(t, "PENDING", triggerResp["status"])
 }
@@ -478,7 +478,7 @@ func TestGetJobAfterTrigger(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	routineID := createResp["routine_id"].(string)
+	routineID := createResp["id"].(string)
 
 	// Trigger routine to create a job
 	resp = doSchedulerRequest(t, http.MethodPost, ts.URL+"/v1/routines/"+routineID+"/trigger", nil)
@@ -488,7 +488,7 @@ func TestGetJobAfterTrigger(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&triggerResp))
 	resp.Body.Close()
 
-	jobID := triggerResp["job_id"].(string)
+	jobID := triggerResp["id"].(string)
 
 	// Get the job
 	resp = doSchedulerRequest(t, http.MethodGet, ts.URL+"/v1/jobs/"+jobID, nil)
@@ -498,7 +498,7 @@ func TestGetJobAfterTrigger(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&getJobResp))
 	resp.Body.Close()
 
-	require.Equal(t, jobID, getJobResp["job_id"])
+	require.Equal(t, jobID, getJobResp["id"])
 	require.Equal(t, routineID, getJobResp["routine_id"])
 	require.NotEmpty(t, getJobResp["scheduled_for"])
 	require.NotEmpty(t, getJobResp["created_at"])
@@ -526,7 +526,7 @@ func TestListJobsForRoutine(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	routineID := createResp["routine_id"].(string)
+	routineID := createResp["id"].(string)
 
 	// Trigger routine to create a job
 	resp = doSchedulerRequest(t, http.MethodPost, ts.URL+"/v1/routines/"+routineID+"/trigger", nil)
@@ -536,7 +536,7 @@ func TestListJobsForRoutine(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&triggerResp))
 	resp.Body.Close()
 
-	jobID := triggerResp["job_id"].(string)
+	jobID := triggerResp["id"].(string)
 
 	// List jobs for routine
 	resp = doSchedulerRequest(t, http.MethodGet, ts.URL+"/v1/routines/"+routineID+"/jobs", nil)
@@ -553,7 +553,7 @@ func TestListJobsForRoutine(t *testing.T) {
 	// Verify the job we triggered is in the list
 	found := false
 	for _, job := range listJobsResp.Data {
-		if job["job_id"] == jobID {
+		if job["id"] == jobID {
 			found = true
 			require.Equal(t, routineID, job["routine_id"])
 			break
@@ -588,7 +588,7 @@ func TestHolidayCRUD(t *testing.T) {
 	require.Equal(t, "Christmas", createResp["name"])
 	require.Equal(t, false, createResp["is_custom"])
 
-	holidayID := createResp["holiday_id"].(string)
+	holidayID := createResp["id"].(string)
 
 	// Get holiday
 	resp = doSchedulerRequest(t, http.MethodGet, ts.URL+"/v1/holidays/"+holidayID, nil)
@@ -732,7 +732,7 @@ func TestDeleteRoutineWithPendingJobs(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	routineID := createResp["routine_id"].(string)
+	routineID := createResp["id"].(string)
 
 	// Trigger routine to create a pending job
 	resp = doSchedulerRequest(t, http.MethodPost, ts.URL+"/v1/routines/"+routineID+"/trigger", nil)

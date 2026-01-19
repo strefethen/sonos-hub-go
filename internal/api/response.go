@@ -3,9 +3,39 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/strefethen/sonos-hub-go/internal/apperrors"
 )
+
+// =============================================================================
+// Object Type Constants (Stripe API standard)
+// =============================================================================
+
+const (
+	ObjectRoutine         = "routine"
+	ObjectJob             = "job"
+	ObjectHoliday         = "holiday"
+	ObjectScene           = "scene"
+	ObjectSceneExecution  = "scene_execution"
+	ObjectMusicSet        = "music_set"
+	ObjectSetItem         = "set_item"
+	ObjectPlayHistory     = "play_history"
+	ObjectDevice          = "device"
+	ObjectPhysicalDevice  = "physical_device"
+	ObjectAuditEvent      = "audit_event"
+	ObjectRoutineTemplate = "routine_template"
+)
+
+// =============================================================================
+// Timestamp Formatting
+// =============================================================================
+
+// RFC3339Millis formats time with milliseconds for API responses.
+// Matches JavaScript Date.toISOString() output format: "2006-01-02T15:04:05.000Z"
+func RFC3339Millis(t time.Time) string {
+	return t.UTC().Format("2006-01-02T15:04:05.000Z")
+}
 
 // =============================================================================
 // Stripe API Standard Response Types

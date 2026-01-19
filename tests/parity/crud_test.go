@@ -56,7 +56,7 @@ func TestSceneCRUDParity(t *testing.T) {
 
 	nodeID, ok := nodeScene["scene_id"].(string)
 	require.True(t, ok, "Node.js response missing scene_id: %v", nodeScene)
-	goID, ok := goScene["scene_id"].(string)
+	goID, ok := goScene["id"].(string)
 	require.True(t, ok, "Go response missing scene_id: %v", goScene)
 
 	// Defer cleanup
@@ -173,7 +173,7 @@ func TestRoutineCRUDParity(t *testing.T) {
 
 	nodeID, ok := nodeRoutine["routine_id"].(string)
 	require.True(t, ok, "Node.js response missing routine_id: %v", nodeRoutine)
-	goID, ok := goRoutine["routine_id"].(string)
+	goID, ok := goRoutine["id"].(string)
 	require.True(t, ok, "Go response missing routine_id: %v", goRoutine)
 
 	defer deleteResource(t, NodeJSBaseURL+"/v1/routines/"+nodeID)
@@ -260,7 +260,7 @@ func TestMusicSetCRUDParity(t *testing.T) {
 
 	nodeID, ok := nodeSet["set_id"].(string)
 	require.True(t, ok, "Node.js response missing set_id: %v", nodeSet)
-	goID, ok := goSet["set_id"].(string)
+	goID, ok := goSet["id"].(string)
 	require.True(t, ok, "Go response missing set_id: %v", goSet)
 
 	defer deleteResource(t, NodeJSBaseURL+"/v1/music/sets/"+nodeID)

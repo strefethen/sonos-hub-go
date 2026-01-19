@@ -224,7 +224,7 @@ func stopScene(service *Service) func(w http.ResponseWriter, r *http.Request) er
 			"scene_id":      sceneID,
 			"results":       results,
 			"all_succeeded": allSucceeded,
-			"stopped_at":    time.Now().UTC().Format(time.RFC3339),
+			"stopped_at":    api.RFC3339Millis(time.Now()),
 		})
 	}
 }
@@ -282,14 +282,14 @@ func formatScene(scene *Scene) map[string]any {
 	}
 
 	result := map[string]any{
-		"object":                 "scene", // Stripe-style object type
-		"scene_id":               scene.SceneID,
+		"object":                 api.ObjectScene,
+		"id":                     scene.SceneID,
 		"name":                   scene.Name,
 		"coordinator_preference": scene.CoordinatorPreference,
 		"fallback_policy":        scene.FallbackPolicy,
 		"members":                members,
-		"created_at":             scene.CreatedAt.UTC().Format(time.RFC3339),
-		"updated_at":             scene.UpdatedAt.UTC().Format(time.RFC3339),
+		"created_at":             api.RFC3339Millis(scene.CreatedAt),
+		"updated_at":             api.RFC3339Millis(scene.UpdatedAt),
 	}
 
 	// Always include description (null if not set) for API parity with Node.js
@@ -339,10 +339,10 @@ func formatExecution(exec *SceneExecution) map[string]any {
 			"status": string(s.Status),
 		}
 		if s.StartedAt != nil {
-			step["started_at"] = s.StartedAt.UTC().Format(time.RFC3339)
+			step["started_at"] = api.RFC3339Millis(*s.StartedAt)
 		}
 		if s.EndedAt != nil {
-			step["ended_at"] = s.EndedAt.UTC().Format(time.RFC3339)
+			step["ended_at"] = api.RFC3339Millis(*s.EndedAt)
 		}
 		if s.Error != "" {
 			step["error"] = s.Error
@@ -354,12 +354,12 @@ func formatExecution(exec *SceneExecution) map[string]any {
 	}
 
 	result := map[string]any{
-		"object":             "scene_execution", // Stripe-style object type
-		"scene_execution_id": exec.SceneExecutionID,
-		"scene_id":           exec.SceneID,
-		"status":             string(exec.Status),
-		"started_at":         exec.StartedAt.UTC().Format(time.RFC3339),
-		"steps":              steps,
+		"object":     api.ObjectSceneExecution,
+		"id":         exec.SceneExecutionID,
+		"scene_id":   exec.SceneID,
+		"status":     string(exec.Status),
+		"started_at": api.RFC3339Millis(exec.StartedAt),
+		"steps":      steps,
 	}
 
 	if exec.IdempotencyKey != nil {
@@ -369,7 +369,7 @@ func formatExecution(exec *SceneExecution) map[string]any {
 		result["coordinator_used_device_id"] = *exec.CoordinatorUsedDeviceID
 	}
 	if exec.EndedAt != nil {
-		result["ended_at"] = exec.EndedAt.UTC().Format(time.RFC3339)
+		result["ended_at"] = api.RFC3339Millis(*exec.EndedAt)
 	}
 	if exec.Error != nil {
 		result["error"] = *exec.Error
@@ -379,7 +379,7 @@ func formatExecution(exec *SceneExecution) map[string]any {
 			"playback_confirmed":       exec.Verification.PlaybackConfirmed,
 			"transport_state":          exec.Verification.TransportState,
 			"track_uri":                exec.Verification.TrackURI,
-			"checked_at":               exec.Verification.CheckedAt.UTC().Format(time.RFC3339),
+			"checked_at":               api.RFC3339Millis(exec.Verification.CheckedAt),
 			"verification_unavailable": exec.Verification.VerificationUnavailable,
 		}
 	}

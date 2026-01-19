@@ -285,9 +285,9 @@ func parseQueryFilters(r *http.Request) (EventQueryFilters, error) {
 // formatEvent formats an AuditEvent for JSON response.
 func formatEvent(event *AuditEvent) map[string]any {
 	result := map[string]any{
-		"object":    "audit_event", // Stripe-style object type
-		"event_id":  event.EventID,
-		"timestamp": event.Timestamp.UTC().Format(time.RFC3339),
+		"object":    api.ObjectAuditEvent,
+		"id":        event.EventID,
+		"timestamp": api.RFC3339Millis(event.Timestamp),
 		"type":      event.Type,
 		"level":     string(event.Level),
 		"message":   event.Message,

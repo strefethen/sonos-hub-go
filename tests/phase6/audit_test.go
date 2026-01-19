@@ -109,7 +109,7 @@ func TestAuditRecordEventWithAllFields(t *testing.T) {
 	resp.Body.Close()
 
 	require.NotEmpty(t, createResp["object"])
-	require.NotEmpty(t, createResp["event_id"])
+	require.NotEmpty(t, createResp["id"])
 	require.Equal(t, "JOB_COMPLETED", createResp["type"])
 	require.Equal(t, "INFO", createResp["level"])
 	require.Equal(t, "Job completed successfully", createResp["message"])
@@ -143,7 +143,7 @@ func TestAuditRecordEventWithMinimalFields(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	require.NotEmpty(t, createResp["event_id"])
+	require.NotEmpty(t, createResp["id"])
 	require.Equal(t, "SYSTEM_STARTUP", createResp["type"])
 	require.Equal(t, "System started", createResp["message"])
 }
@@ -477,7 +477,7 @@ func TestAuditGetEventByID(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	eventID := createResp["event_id"].(string)
+	eventID := createResp["id"].(string)
 
 	// Get the event by ID
 	resp = doAuditRequest(t, http.MethodGet, ts.URL+"/v1/audit/events/"+eventID, nil)
@@ -487,7 +487,7 @@ func TestAuditGetEventByID(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&getResp))
 	resp.Body.Close()
 
-	require.Equal(t, eventID, getResp["event_id"])
+	require.Equal(t, eventID, getResp["id"])
 	require.Equal(t, "JOB_COMPLETED", getResp["type"])
 	require.Equal(t, "INFO", getResp["level"])
 	require.Equal(t, "Job completed successfully", getResp["message"])

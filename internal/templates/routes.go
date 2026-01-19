@@ -207,8 +207,8 @@ func scanTemplateRow(row *sql.Row) (*RoutineTemplate, error) {
 // formatTemplate formats a RoutineTemplate for JSON response.
 func formatTemplate(t *RoutineTemplate) map[string]any {
 	result := map[string]any{
-		"object":            "routine_template",
-		"template_id":       t.TemplateID,
+		"object":            api.ObjectRoutineTemplate,
+		"id":                t.TemplateID,
 		"name":              t.Name,
 		"category":          t.Category,
 		"sort_order":        t.SortOrder,
@@ -218,7 +218,7 @@ func formatTemplate(t *RoutineTemplate) map[string]any {
 		"music_policy_type": t.MusicPolicyType,
 		"holiday_behavior":  t.HolidayBehavior,
 		"arc_tv_policy":     t.ArcTVPolicy,
-		"created_at":        t.CreatedAt.UTC().Format(time.RFC3339),
+		"created_at":        api.RFC3339Millis(t.CreatedAt),
 	}
 
 	if t.Description != nil {

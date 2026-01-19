@@ -110,13 +110,13 @@ func TestSceneCRUD(t *testing.T) {
 	resp.Body.Close()
 
 	require.Equal(t, "scene", createResp["object"])
-	require.NotEmpty(t, createResp["scene_id"])
+	require.NotEmpty(t, createResp["id"])
 	require.Equal(t, "Morning Music", createResp["name"])
 	require.Equal(t, "Wake up playlist", createResp["description"])
 	require.Equal(t, "ARC_FIRST", createResp["coordinator_preference"])
 	require.Equal(t, "PLAYBASE_IF_ARC_TV_ACTIVE", createResp["fallback_policy"])
 
-	sceneID := createResp["scene_id"].(string)
+	sceneID := createResp["id"].(string)
 
 	// Get scene
 	resp = doRequest(t, http.MethodGet, ts.URL+"/v1/scenes/"+sceneID, nil)
@@ -126,7 +126,7 @@ func TestSceneCRUD(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&getResp))
 	resp.Body.Close()
 
-	require.Equal(t, sceneID, getResp["scene_id"])
+	require.Equal(t, sceneID, getResp["id"])
 	require.Equal(t, "Morning Music", getResp["name"])
 
 	// Update scene
@@ -218,7 +218,7 @@ func TestSceneExecuteCreatesExecution(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	sceneID := createResp["scene_id"].(string)
+	sceneID := createResp["id"].(string)
 
 	// Execute scene
 	resp = doRequest(t, http.MethodPost, ts.URL+"/v1/scenes/"+sceneID+"/execute", nil)
@@ -229,12 +229,12 @@ func TestSceneExecuteCreatesExecution(t *testing.T) {
 	resp.Body.Close()
 
 	require.Equal(t, "scene_execution", execResp["object"])
-	require.NotEmpty(t, execResp["scene_execution_id"])
+	require.NotEmpty(t, execResp["id"])
 	require.Equal(t, sceneID, execResp["scene_id"])
 	require.Equal(t, "STARTING", execResp["status"])
 	require.False(t, execResp["idempotent"].(bool))
 
-	_ = execResp["scene_execution_id"].(string)
+	_ = execResp["id"].(string)
 }
 
 func TestSceneExecuteIdempotency(t *testing.T) {
@@ -253,7 +253,7 @@ func TestSceneExecuteIdempotency(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	sceneID := createResp["scene_id"].(string)
+	sceneID := createResp["id"].(string)
 
 	// Execute with idempotency key
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/scenes/"+sceneID+"/execute", bytes.NewBuffer(nil))
@@ -267,7 +267,7 @@ func TestSceneExecuteIdempotency(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&execResp1))
 	resp.Body.Close()
 
-	execID := execResp1["scene_execution_id"].(string)
+	execID := execResp1["id"].(string)
 
 	// Execute again with same idempotency key
 	req, _ = http.NewRequest(http.MethodPost, ts.URL+"/v1/scenes/"+sceneID+"/execute", bytes.NewBuffer(nil))
@@ -282,7 +282,7 @@ func TestSceneExecuteIdempotency(t *testing.T) {
 	resp.Body.Close()
 
 	// Should return the same execution
-	require.Equal(t, execID, execResp2["scene_execution_id"])
+	require.Equal(t, execID, execResp2["id"])
 }
 
 func TestSceneExecutionsList(t *testing.T) {
@@ -301,7 +301,7 @@ func TestSceneExecutionsList(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	sceneID := createResp["scene_id"].(string)
+	sceneID := createResp["id"].(string)
 
 	// Create multiple executions
 	for i := 0; i < 3; i++ {
@@ -338,7 +338,7 @@ func TestSceneStop(t *testing.T) {
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&createResp))
 	resp.Body.Close()
 
-	sceneID := createResp["scene_id"].(string)
+	sceneID := createResp["id"].(string)
 
 	// Stop scene
 	resp = doRequest(t, http.MethodPost, ts.URL+"/v1/scenes/"+sceneID+"/stop", nil)

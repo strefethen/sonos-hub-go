@@ -2,18 +2,12 @@ package devices
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/strefethen/sonos-hub-go/internal/api"
 	"github.com/strefethen/sonos-hub-go/internal/apperrors"
 )
-
-// rfc3339Millis formats time with milliseconds to match Node.js ISO format
-func rfc3339Millis(t time.Time) string {
-	return t.UTC().Format("2006-01-02T15:04:05.000Z")
-}
 
 // RegisterRoutes wires device routes to the router.
 func RegisterRoutes(router chi.Router, service *Service) {
@@ -109,7 +103,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			"devices":             devices,
 			"home_theater_groups": homeTheaterGroups,
 			"stereo_pairs":        stereoPairs,
-			"updated_at":          topology.UpdatedAt.UTC().Format(time.RFC3339),
+			"updated_at":          api.RFC3339Millis(topology.UpdatedAt),
 		})
 	}))
 
@@ -143,7 +137,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			"total":          len(topology.Devices),
 			"online":         online,
 			"offline":        offline,
-			"last_discovery": topology.UpdatedAt.UTC().Format(time.RFC3339),
+			"last_discovery": api.RFC3339Millis(topology.UpdatedAt),
 		})
 	}))
 }
@@ -165,8 +159,8 @@ func formatDevice(device LogicalDevice) map[string]any {
 	}
 
 	return map[string]any{
-		"object":                 "device", // Stripe-style object type
-		"device_id":              device.DeviceID,
+		"object":                 api.ObjectDevice,
+		"id":                     device.DeviceID,
 		"udn":                    primaryUDN,
 		"room_name":              device.RoomName,
 		"ip":                     device.IP,
@@ -176,7 +170,7 @@ func formatDevice(device LogicalDevice) map[string]any {
 		"is_coordinator_capable": device.IsCoordinatorCapable,
 		"supports_airplay":       device.SupportsAirPlay,
 		"logical_group_id":       logicalGroup,
-		"last_seen_at":           rfc3339Millis(device.LastSeenAt),
+		"last_seen_at":           api.RFC3339Millis(device.LastSeenAt),
 		"physical_device_count":  physicalCount,
 		"health":                 device.Health,
 		"missed_scans":           device.MissedScans,
@@ -185,8 +179,8 @@ func formatDevice(device LogicalDevice) map[string]any {
 
 func formatPhysicalDevice(device PhysicalDevice) map[string]any {
 	return map[string]any{
-		"object":                 "physical_device", // Stripe-style object type
-		"device_id":              device.DeviceID,
+		"object":                 api.ObjectPhysicalDevice,
+		"id":                     device.DeviceID,
 		"udn":                    device.UDN,
 		"model":                  device.Model,
 		"model_number":           device.ModelNumber,
@@ -194,7 +188,7 @@ func formatPhysicalDevice(device PhysicalDevice) map[string]any {
 		"role":                   device.Role,
 		"is_coordinator_capable": device.IsCoordinatorCapable,
 		"supports_airplay":       device.SupportsAirPlay,
-		"last_seen_at":           rfc3339Millis(device.LastSeenAt),
+		"last_seen_at":           api.RFC3339Millis(device.LastSeenAt),
 		"health":                 device.Health,
 		"missed_scans":           device.MissedScans,
 	}

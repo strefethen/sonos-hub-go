@@ -16,11 +16,6 @@ import (
 	"github.com/strefethen/sonos-hub-go/internal/apperrors"
 )
 
-// rfc3339Millis formats time with milliseconds to match Node.js ISO format
-func rfc3339Millis(t time.Time) string {
-	return t.UTC().Format("2006-01-02T15:04:05.000Z")
-}
-
 // RegisterRoutes wires Sonos routes to the router.
 func RegisterRoutes(router chi.Router, service *Service) {
 	router.Route("/v1/sonos/playback", func(playback chi.Router) {
@@ -44,7 +39,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				"object":     "playback_action",
 				"device_id":  body.DeviceID,
 				"action":     "stop",
-				"stopped_at": rfc3339Millis(time.Now()),
+				"stopped_at": api.RFC3339Millis(time.Now()),
 			})
 		}))
 
@@ -68,7 +63,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				"object":    "playback_action",
 				"device_id": body.DeviceID,
 				"action":    "pause",
-				"paused_at": rfc3339Millis(time.Now()),
+				"paused_at": api.RFC3339Millis(time.Now()),
 			})
 		}))
 
@@ -92,7 +87,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				"object":     "playback_action",
 				"device_id":  body.DeviceID,
 				"action":     "play",
-				"resumed_at": rfc3339Millis(time.Now()),
+				"resumed_at": api.RFC3339Millis(time.Now()),
 			})
 		}))
 
@@ -116,7 +111,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				"object":     "playback_action",
 				"device_id":  body.DeviceID,
 				"action":     "next",
-				"skipped_at": rfc3339Millis(time.Now()),
+				"skipped_at": api.RFC3339Millis(time.Now()),
 			})
 		}))
 
@@ -143,7 +138,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				"object":     "playback_action",
 				"device_id":  body.DeviceID,
 				"action":     "previous",
-				"skipped_at": rfc3339Millis(time.Now()),
+				"skipped_at": api.RFC3339Millis(time.Now()),
 			})
 		}))
 
@@ -1028,7 +1023,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				"source":          source,
 				"transport_state": transportInfo.CurrentTransportState,
 				"current_uri":     emptyToNil(currentURI),
-				"last_checked_at": rfc3339Millis(time.Now()),
+				"last_checked_at": api.RFC3339Millis(time.Now()),
 			})
 		}))
 	})

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -90,8 +89,8 @@ func authCallback(client *Client) func(w http.ResponseWriter, r *http.Request) e
 		return api.WriteResource(w, http.StatusOK, map[string]any{
 			"object":       "sonos_cloud_connection",
 			"connected":    true,
-			"expires_at":   token.ExpiresAt.UTC().Format(time.RFC3339),
-			"connected_at": token.CreatedAt.UTC().Format(time.RFC3339),
+			"expires_at":   api.RFC3339Millis(token.ExpiresAt),
+			"connected_at": api.RFC3339Millis(token.CreatedAt),
 			"scope":        token.Scope,
 		})
 	}
@@ -108,10 +107,10 @@ func authStatus(client *Client) func(w http.ResponseWriter, r *http.Request) err
 			"connected": status.Connected,
 		}
 		if status.ExpiresAt != nil {
-			data["expires_at"] = status.ExpiresAt.UTC().Format(time.RFC3339)
+			data["expires_at"] = api.RFC3339Millis(*status.ExpiresAt)
 		}
 		if status.ConnectedAt != nil {
-			data["connected_at"] = status.ConnectedAt.UTC().Format(time.RFC3339)
+			data["connected_at"] = api.RFC3339Millis(*status.ConnectedAt)
 		}
 		if status.Scope != "" {
 			data["scope"] = status.Scope
@@ -154,7 +153,7 @@ func authRefresh(client *Client) func(w http.ResponseWriter, r *http.Request) er
 		return api.WriteAction(w, http.StatusOK, map[string]any{
 			"object":     "token_refresh",
 			"refreshed":  true,
-			"expires_at": token.ExpiresAt.UTC().Format(time.RFC3339),
+			"expires_at": api.RFC3339Millis(token.ExpiresAt),
 		})
 	}
 }

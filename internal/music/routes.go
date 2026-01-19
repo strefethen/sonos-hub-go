@@ -4,18 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/strefethen/sonos-hub-go/internal/api"
 	"github.com/strefethen/sonos-hub-go/internal/apperrors"
 )
-
-// rfc3339Millis formats time with milliseconds to match Node.js ISO format
-func rfc3339Millis(t time.Time) string {
-	return t.UTC().Format("2006-01-02T15:04:05.000Z")
-}
 
 // RegisterRoutes wires music catalog routes to the router.
 func RegisterRoutes(router chi.Router, service *Service) {
@@ -81,15 +75,15 @@ func createSet(service *Service) func(w http.ResponseWriter, r *http.Request) er
 
 		// Stripe-style: return resource directly
 		setResponse := map[string]any{
-			"object":           "music_set", // Stripe-style object type
-			"set_id":           set.SetID,
+			"object":           api.ObjectMusicSet,
+			"id":               set.SetID,
 			"name":             set.Name,
 			"selection_policy": set.SelectionPolicy,
 			"current_index":    set.CurrentIndex,
 			"occasion_start":   set.OccasionStart,
 			"occasion_end":     set.OccasionEnd,
-			"created_at":       rfc3339Millis(set.CreatedAt),
-			"updated_at":       rfc3339Millis(set.UpdatedAt),
+			"created_at":       api.RFC3339Millis(set.CreatedAt),
+			"updated_at":       api.RFC3339Millis(set.UpdatedAt),
 		}
 		return api.WriteResource(w, http.StatusCreated, setResponse)
 	}
@@ -202,7 +196,7 @@ func getSet(service *Service) func(w http.ResponseWriter, r *http.Request) error
 				"content_type":      item.ContentType,
 				"music_content":     musicContent,
 				"position":          item.Position,
-				"added_at":          rfc3339Millis(item.AddedAt),
+				"added_at":          api.RFC3339Millis(item.AddedAt),
 				"service_logo_url":  nil,
 				"service_name":      nil,
 				"display_name":      nil,
@@ -221,15 +215,15 @@ func getSet(service *Service) func(w http.ResponseWriter, r *http.Request) error
 
 		// Stripe-style: return resource directly
 		setResponse := map[string]any{
-			"object":           "music_set", // Stripe-style object type
-			"set_id":           set.SetID,
+			"object":           api.ObjectMusicSet,
+			"id":               set.SetID,
 			"name":             set.Name,
 			"selection_policy": set.SelectionPolicy,
 			"current_index":    set.CurrentIndex,
 			"occasion_start":   set.OccasionStart,
 			"occasion_end":     set.OccasionEnd,
-			"created_at":       rfc3339Millis(set.CreatedAt),
-			"updated_at":       rfc3339Millis(set.UpdatedAt),
+			"created_at":       api.RFC3339Millis(set.CreatedAt),
+			"updated_at":       api.RFC3339Millis(set.UpdatedAt),
 			"items":            formattedItems,
 		}
 
@@ -279,15 +273,15 @@ func updateSet(service *Service) func(w http.ResponseWriter, r *http.Request) er
 
 		// Stripe-style: return resource directly
 		setResponse := map[string]any{
-			"object":           "music_set", // Stripe-style object type
-			"set_id":           set.SetID,
+			"object":           api.ObjectMusicSet,
+			"id":               set.SetID,
 			"name":             set.Name,
 			"selection_policy": set.SelectionPolicy,
 			"current_index":    set.CurrentIndex,
 			"occasion_start":   set.OccasionStart,
 			"occasion_end":     set.OccasionEnd,
-			"created_at":       rfc3339Millis(set.CreatedAt),
-			"updated_at":       rfc3339Millis(set.UpdatedAt),
+			"created_at":       api.RFC3339Millis(set.CreatedAt),
+			"updated_at":       api.RFC3339Millis(set.UpdatedAt),
 		}
 		return api.WriteResource(w, http.StatusOK, setResponse)
 	}
@@ -345,13 +339,13 @@ func addItem(service *Service) func(w http.ResponseWriter, r *http.Request) erro
 
 		// Stripe-style: return resource directly
 		itemResponse := map[string]any{
-			"object":            "set_item", // Stripe-style object type
+			"object":            api.ObjectSetItem,
 			"set_id":            item.SetID,
 			"sonos_favorite_id": item.SonosFavoriteID,
 			"content_type":      item.ContentType,
 			"music_content":     musicContent,
 			"position":          item.Position,
-			"added_at":          rfc3339Millis(item.AddedAt),
+			"added_at":          api.RFC3339Millis(item.AddedAt),
 			"service_logo_url":  nil,
 			"service_name":      nil,
 			"display_name":      nil,
@@ -511,29 +505,30 @@ func getHistory(service *Service) func(w http.ResponseWriter, r *http.Request) e
 // formatSet formats a MusicSet for JSON response.
 func formatSet(set *MusicSet) map[string]any {
 	result := map[string]any{
-		"object":           "music_set", // Stripe-style object type
-		"set_id":           set.SetID,
+		"object":           api.ObjectMusicSet,
+		"id":               set.SetID,
 		"name":             set.Name,
 		"selection_policy": set.SelectionPolicy,
 		"current_index":    set.CurrentIndex,
 		"item_count":       set.ItemCount,
 		"occasion_start":   set.OccasionStart,
 		"occasion_end":     set.OccasionEnd,
-		"created_at":       rfc3339Millis(set.CreatedAt),
-		"updated_at":       rfc3339Millis(set.UpdatedAt),
+		"created_at":       api.RFC3339Millis(set.CreatedAt),
+		"updated_at":       api.RFC3339Millis(set.UpdatedAt),
 	}
 	return result
 }
 
 // formatItem formats a SetItem for JSON response.
+// Note: SetItem uses a compound key (set_id + position), so set_id remains as-is.
 func formatItem(item *SetItem) map[string]any {
 	result := map[string]any{
-		"object":            "set_item", // Stripe-style object type
+		"object":            api.ObjectSetItem,
 		"set_id":            item.SetID,
 		"sonos_favorite_id": item.SonosFavoriteID,
 		"position":          item.Position,
 		"content_type":      item.ContentType,
-		"added_at":          rfc3339Millis(item.AddedAt),
+		"added_at":          api.RFC3339Millis(item.AddedAt),
 	}
 
 	if item.ServiceLogoURL != nil {
@@ -552,10 +547,10 @@ func formatItem(item *SetItem) map[string]any {
 // formatHistory formats a PlayHistory for JSON response.
 func formatHistory(h *PlayHistory) map[string]any {
 	result := map[string]any{
-		"object":            "play_history", // Stripe-style object type
+		"object":            api.ObjectPlayHistory,
 		"id":                h.ID,
 		"sonos_favorite_id": h.SonosFavoriteID,
-		"played_at":         rfc3339Millis(h.PlayedAt),
+		"played_at":         api.RFC3339Millis(h.PlayedAt),
 	}
 
 	if h.SetID != nil {
@@ -700,13 +695,13 @@ func addContent(service *Service) func(w http.ResponseWriter, r *http.Request) e
 
 		// Stripe-style: return resource directly
 		itemResponse := map[string]any{
-			"object":            "set_item", // Stripe-style object type
+			"object":            api.ObjectSetItem,
 			"set_id":            item.SetID,
 			"sonos_favorite_id": item.SonosFavoriteID,
 			"content_type":      item.ContentType,
 			"music_content":     input.MusicContent,
 			"position":          item.Position,
-			"added_at":          rfc3339Millis(item.AddedAt),
+			"added_at":          api.RFC3339Millis(item.AddedAt),
 			"service_logo_url":  nil,
 			"service_name":      nil,
 			"display_name":      nil,

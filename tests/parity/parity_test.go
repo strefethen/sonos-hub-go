@@ -402,7 +402,7 @@ func TestDeviceListParity(t *testing.T) {
 
 	require.Equal(t, len(nodeDevices), len(goDevices), "device count mismatch")
 
-	// Build map by device_id
+	// Build map by device_id (Node.js still uses device_id, Go uses id)
 	nodeByID := make(map[string]map[string]any)
 	for _, d := range nodeDevices {
 		device := d.(map[string]any)
@@ -412,7 +412,7 @@ func TestDeviceListParity(t *testing.T) {
 	// Compare each Go device to Node device
 	for _, d := range goDevices {
 		goDevice := d.(map[string]any)
-		deviceID := goDevice["device_id"].(string)
+		deviceID := goDevice["id"].(string)
 		nodeDevice, exists := nodeByID[deviceID]
 		require.True(t, exists, "Go has device %s not in Node.js", deviceID)
 
@@ -439,7 +439,7 @@ func TestRoutineListParity(t *testing.T) {
 
 	for _, r := range goRoutines {
 		goRoutine := r.(map[string]any)
-		routineID := goRoutine["routine_id"].(string)
+		routineID := goRoutine["id"].(string)
 		nodeRoutine, exists := nodeByID[routineID]
 		require.True(t, exists, "Go has routine %s not in Node.js", routineID)
 
@@ -465,7 +465,7 @@ func TestMusicSetsListParity(t *testing.T) {
 
 	for _, s := range goSets {
 		goSet := s.(map[string]any)
-		setID := goSet["set_id"].(string)
+		setID := goSet["id"].(string)
 		nodeSet, exists := nodeByID[setID]
 		require.True(t, exists, "Go has set %s not in Node.js", setID)
 
@@ -547,7 +547,7 @@ func TestSceneListParity(t *testing.T) {
 
 	for _, s := range goScenes {
 		goScene := s.(map[string]any)
-		sceneID := goScene["scene_id"].(string)
+		sceneID := goScene["id"].(string)
 		nodeScene, exists := nodeByID[sceneID]
 		require.True(t, exists, "Go has scene %s not in Node.js", sceneID)
 
@@ -576,7 +576,7 @@ func TestTemplateListParity(t *testing.T) {
 
 	for _, tmpl := range goTemplates {
 		goTemplate := tmpl.(map[string]any)
-		templateID := goTemplate["template_id"].(string)
+		templateID := goTemplate["id"].(string)
 		nodeTemplate, exists := nodeByID[templateID]
 		require.True(t, exists, "Go has template %s not in Node.js", templateID)
 
