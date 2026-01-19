@@ -24,7 +24,7 @@ func getSystemInfo(service *Service) func(w http.ResponseWriter, r *http.Request
 			return apperrors.NewInternalError("Failed to get system info")
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "info", formatSystemInfo(info))
+		return api.WriteResource(w, http.StatusOK, formatSystemInfo(info))
 	}
 }
 
@@ -36,7 +36,7 @@ func getDashboard(service *Service) func(w http.ResponseWriter, r *http.Request)
 			return apperrors.NewInternalError("Failed to get dashboard data")
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "dashboard", formatDashboardData(data))
+		return api.WriteResource(w, http.StatusOK, formatDashboardData(data))
 	}
 }
 
@@ -44,6 +44,7 @@ func getDashboard(service *Service) func(w http.ResponseWriter, r *http.Request)
 // Matches Node.js system.ts SystemInfoResponse interface exactly.
 func formatSystemInfo(info *SystemInfo) map[string]any {
 	result := map[string]any{
+		"object":            "system_info",
 		"hub_version":       info.HubVersion,
 		"uptime_seconds":    info.Uptime,
 		"memory_mb":         info.MemoryUsageMB,
@@ -67,6 +68,7 @@ func formatSystemInfo(info *SystemInfo) map[string]any {
 // formatDashboardData formats DashboardData for JSON response.
 func formatDashboardData(data *DashboardData) map[string]any {
 	result := map[string]any{
+		"object":            "dashboard",
 		"upcoming_routines": formatRoutineSummaries(data.UpcomingRoutines),
 		"attention_items":   formatAttentionItems(data.AttentionItems),
 	}

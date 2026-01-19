@@ -26,7 +26,8 @@ func RegisterRoutes(router chi.Router, store *PairingStore, cfg config.Config) {
 
 		log.Printf("Pairing code generated - enter this on your device: %s", pairCode)
 
-		return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+		return api.WriteAction(w, http.StatusOK, map[string]any{
+			"object":       "pairing_start",
 			"pairing_hint": "Enter pairing code on your device. Code: " + pairCode,
 		})
 	}))
@@ -66,7 +67,8 @@ func RegisterRoutes(router chi.Router, store *PairingStore, cfg config.Config) {
 			return apperrors.NewInternalError("Failed to generate token pair")
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "tokens", map[string]any{
+		return api.WriteResource(w, http.StatusOK, map[string]any{
+			"object":         "token_pair",
 			"access_token":   tokens.AccessToken,
 			"refresh_token":  tokens.RefreshToken,
 			"expires_in_sec": tokens.ExpiresInSec,
@@ -96,7 +98,8 @@ func RegisterRoutes(router chi.Router, store *PairingStore, cfg config.Config) {
 			}
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "tokens", map[string]any{
+		return api.WriteResource(w, http.StatusOK, map[string]any{
+			"object":         "token_refresh",
 			"access_token":   accessToken,
 			"expires_in_sec": expiresIn,
 		})

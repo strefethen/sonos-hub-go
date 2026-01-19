@@ -29,8 +29,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			formatted = append(formatted, formatDevice(device))
 		}
 
-		// Small fixed list - no pagination needed, use ListResponse
-		return api.ListResponse(w, r, http.StatusOK, "devices", formatted, nil)
+		// Stripe-style list response
+		return api.WriteList(w, "/v1/devices", formatted, false)
 	}))
 
 	router.Method(http.MethodGet, "/v1/devices/{device_id}", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
@@ -44,7 +44,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			return apperrors.NewNotFoundResource("Device", deviceID)
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "device", formatDevice(*device))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatDevice(*device))
 	}))
 
 	router.Method(http.MethodPost, "/v1/devices/rescan", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
@@ -53,7 +54,9 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			return apperrors.NewInternalError("Device rescan failed")
 		}
 
-		return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+		// Stripe-style: return action result directly with object type
+		return api.WriteAction(w, http.StatusOK, map[string]any{
+			"object":        "rescan",
 			"devices_found": count,
 			"duration_ms":   durationMs,
 		})
@@ -100,7 +103,9 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			})
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "topology", map[string]any{
+		// Stripe-style: return resource directly with object type
+		return api.WriteResource(w, http.StatusOK, map[string]any{
+			"object":              "topology",
 			"devices":             devices,
 			"home_theater_groups": homeTheaterGroups,
 			"stereo_pairs":        stereoPairs,
@@ -111,7 +116,9 @@ func RegisterRoutes(router chi.Router, service *Service) {
 	router.Method(http.MethodGet, "/v1/devices/stats", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
 		topology, err := service.GetTopology()
 		if err != nil {
-			return api.SingleResponse(w, r, http.StatusOK, "stats", map[string]any{
+			// Stripe-style: return resource directly with object type
+			return api.WriteResource(w, http.StatusOK, map[string]any{
+				"object":         "device_stats",
 				"total":          0,
 				"online":         0,
 				"offline":        0,
@@ -130,7 +137,9 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			}
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "stats", map[string]any{
+		// Stripe-style: return resource directly with object type
+		return api.WriteResource(w, http.StatusOK, map[string]any{
+			"object":         "device_stats",
 			"total":          len(topology.Devices),
 			"online":         online,
 			"offline":        offline,
@@ -156,6 +165,7 @@ func formatDevice(device LogicalDevice) map[string]any {
 	}
 
 	return map[string]any{
+		"object":                 "device", // Stripe-style object type
 		"device_id":              device.DeviceID,
 		"udn":                    primaryUDN,
 		"room_name":              device.RoomName,
@@ -168,11 +178,14 @@ func formatDevice(device LogicalDevice) map[string]any {
 		"logical_group_id":       logicalGroup,
 		"last_seen_at":           rfc3339Millis(device.LastSeenAt),
 		"physical_device_count":  physicalCount,
+		"health":                 device.Health,
+		"missed_scans":           device.MissedScans,
 	}
 }
 
 func formatPhysicalDevice(device PhysicalDevice) map[string]any {
 	return map[string]any{
+		"object":                 "physical_device", // Stripe-style object type
 		"device_id":              device.DeviceID,
 		"udn":                    device.UDN,
 		"model":                  device.Model,
@@ -182,6 +195,8 @@ func formatPhysicalDevice(device PhysicalDevice) map[string]any {
 		"is_coordinator_capable": device.IsCoordinatorCapable,
 		"supports_airplay":       device.SupportsAirPlay,
 		"last_seen_at":           rfc3339Millis(device.LastSeenAt),
+		"health":                 device.Health,
+		"missed_scans":           device.MissedScans,
 	}
 }
 

@@ -93,7 +93,7 @@ func queryEvents(service *Service) func(w http.ResponseWriter, r *http.Request) 
 			return err
 		}
 
-		events, total, hasMore, err := service.QueryEvents(filters)
+		events, _, hasMore, err := service.QueryEvents(filters)
 		if err != nil {
 			return apperrors.NewInternalError("Failed to query audit events")
 		}
@@ -103,13 +103,8 @@ func queryEvents(service *Service) func(w http.ResponseWriter, r *http.Request) 
 			formatted = append(formatted, formatEvent(&event))
 		}
 
-		pagination := &api.Pagination{
-			Total:   total,
-			Limit:   filters.Limit,
-			Offset:  filters.Offset,
-			HasMore: hasMore,
-		}
-		return api.ListResponse(w, r, http.StatusOK, "events", formatted, pagination)
+		// Stripe-style list response
+		return api.WriteList(w, "/v1/audit/events", formatted, hasMore)
 	}
 }
 
@@ -130,7 +125,8 @@ func getEvent(service *Service) func(w http.ResponseWriter, r *http.Request) err
 			return apperrors.NewInternalError("Failed to get audit event")
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "event", formatEvent(event))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatEvent(event))
 	}
 }
 
@@ -196,7 +192,8 @@ func recordEvent(service *Service) func(w http.ResponseWriter, r *http.Request) 
 			return apperrors.NewInternalError("Failed to record audit event")
 		}
 
-		return api.SingleResponse(w, r, http.StatusCreated, "event", formatEvent(event))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusCreated, formatEvent(event))
 	}
 }
 
@@ -288,6 +285,7 @@ func parseQueryFilters(r *http.Request) (EventQueryFilters, error) {
 // formatEvent formats an AuditEvent for JSON response.
 func formatEvent(event *AuditEvent) map[string]any {
 	result := map[string]any{
+		"object":    "audit_event", // Stripe-style object type
 		"event_id":  event.EventID,
 		"timestamp": event.Timestamp.UTC().Format(time.RFC3339),
 		"type":      event.Type,

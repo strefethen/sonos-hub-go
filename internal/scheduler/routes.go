@@ -95,7 +95,8 @@ func createRoutine(routinesRepo *RoutinesRepository, sceneService *scene.Service
 		// Build device room map for speaker enrichment
 		deviceRoomMap := buildDeviceRoomMap(deviceService)
 
-		return api.SingleResponse(w, r, http.StatusCreated, "routine", formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusCreated, formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
 	}
 }
 
@@ -135,13 +136,9 @@ func listRoutines(routinesRepo *RoutinesRepository, deviceService *devices.Servi
 			formatted = append(formatted, formatRoutineWithEnrichment(&routine, deviceRoomMap, musicService))
 		}
 
-		pagination := &api.Pagination{
-			Total:   total,
-			Limit:   limit,
-			Offset:  offset,
-			HasMore: offset+len(routines) < total,
-		}
-		return api.ListResponse(w, r, http.StatusOK, "routines", formatted, pagination)
+		hasMore := offset+len(routines) < total
+		// Stripe-style list response
+		return api.WriteList(w, "/v1/routines", formatted, hasMore)
 	}
 }
 
@@ -160,7 +157,8 @@ func getRoutine(routinesRepo *RoutinesRepository, deviceService *devices.Service
 		// Build device room map for speaker enrichment
 		deviceRoomMap := buildDeviceRoomMap(deviceService)
 
-		return api.SingleResponse(w, r, http.StatusOK, "routine", formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
 	}
 }
 
@@ -213,7 +211,8 @@ func updateRoutine(routinesRepo *RoutinesRepository, sceneService *scene.Service
 		// Build device room map for speaker enrichment
 		deviceRoomMap := buildDeviceRoomMap(deviceService)
 
-		return api.SingleResponse(w, r, http.StatusOK, "routine", formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
 	}
 }
 
@@ -266,7 +265,8 @@ func enableRoutine(routinesRepo *RoutinesRepository, deviceService *devices.Serv
 		// Build device room map for speaker enrichment
 		deviceRoomMap := buildDeviceRoomMap(deviceService)
 
-		return api.SingleResponse(w, r, http.StatusOK, "routine", formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
 	}
 }
 
@@ -286,7 +286,8 @@ func disableRoutine(routinesRepo *RoutinesRepository, deviceService *devices.Ser
 		// Build device room map for speaker enrichment
 		deviceRoomMap := buildDeviceRoomMap(deviceService)
 
-		return api.SingleResponse(w, r, http.StatusOK, "routine", formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
 	}
 }
 
@@ -312,8 +313,8 @@ func triggerRoutine(routinesRepo *RoutinesRepository, jobsRepo *JobsRepository) 
 			return apperrors.NewInternalError("Failed to create job")
 		}
 
-		// Return 202 Accepted for async execution
-		return api.SingleResponse(w, r, http.StatusAccepted, "job", formatJob(job))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusAccepted, formatJob(job))
 	}
 }
 
@@ -353,7 +354,8 @@ func snoozeRoutine(routinesRepo *RoutinesRepository, deviceService *devices.Serv
 		// Build device room map for speaker enrichment
 		deviceRoomMap := buildDeviceRoomMap(deviceService)
 
-		return api.SingleResponse(w, r, http.StatusOK, "routine", formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
 	}
 }
 
@@ -372,7 +374,8 @@ func unsnoozeRoutine(routinesRepo *RoutinesRepository, deviceService *devices.Se
 		// Build device room map for speaker enrichment
 		deviceRoomMap := buildDeviceRoomMap(deviceService)
 
-		return api.SingleResponse(w, r, http.StatusOK, "routine", formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
 	}
 }
 
@@ -392,7 +395,8 @@ func skipNextOccurrence(routinesRepo *RoutinesRepository, deviceService *devices
 		// Build device room map for speaker enrichment
 		deviceRoomMap := buildDeviceRoomMap(deviceService)
 
-		return api.SingleResponse(w, r, http.StatusOK, "routine", formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatRoutineWithEnrichment(routine, deviceRoomMap, musicService))
 	}
 }
 
@@ -412,7 +416,8 @@ func getJob(jobsRepo *JobsRepository) func(w http.ResponseWriter, r *http.Reques
 			return apperrors.NewAppError(apperrors.ErrorCodeJobNotFound, "Job not found", 404, map[string]any{"job_id": jobID}, nil)
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "job", formatJob(job))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatJob(job))
 	}
 }
 
@@ -453,13 +458,9 @@ func listJobsForRoutine(routinesRepo *RoutinesRepository, jobsRepo *JobsReposito
 			formatted = append(formatted, formatJob(&job))
 		}
 
-		pagination := &api.Pagination{
-			Total:   total,
-			Limit:   limit,
-			Offset:  offset,
-			HasMore: offset+len(jobs) < total,
-		}
-		return api.ListResponse(w, r, http.StatusOK, "jobs", formatted, pagination)
+		hasMore := offset+len(jobs) < total
+		// Stripe-style list response
+		return api.WriteList(w, "/v1/routines/"+routineID+"/jobs", formatted, hasMore)
 	}
 }
 
@@ -504,7 +505,8 @@ func createHoliday(holidaysRepo *HolidaysRepository) func(w http.ResponseWriter,
 			return apperrors.NewInternalError("Failed to create holiday")
 		}
 
-		return api.SingleResponse(w, r, http.StatusCreated, "holiday", formatHoliday(holiday))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusCreated, formatHoliday(holiday))
 	}
 }
 
@@ -534,13 +536,9 @@ func listHolidays(holidaysRepo *HolidaysRepository) func(w http.ResponseWriter, 
 			formatted = append(formatted, formatHoliday(&holiday))
 		}
 
-		pagination := &api.Pagination{
-			Total:   total,
-			Limit:   limit,
-			Offset:  offset,
-			HasMore: offset+len(holidays) < total,
-		}
-		return api.ListResponse(w, r, http.StatusOK, "holidays", formatted, pagination)
+		hasMore := offset+len(holidays) < total
+		// Stripe-style list response
+		return api.WriteList(w, "/v1/holidays", formatted, hasMore)
 	}
 }
 
@@ -556,7 +554,8 @@ func getHoliday(holidaysRepo *HolidaysRepository) func(w http.ResponseWriter, r 
 			return apperrors.NewAppError(apperrors.ErrorCodeHolidayNotFound, "Holiday not found", 404, map[string]any{"holiday_id": holidayID}, nil)
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "holiday", formatHoliday(holiday))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatHoliday(holiday))
 	}
 }
 
@@ -597,6 +596,7 @@ func checkHoliday(holidaysRepo *HolidaysRepository) func(w http.ResponseWriter, 
 		}
 
 		result := map[string]any{
+			"object":     "holiday_check",
 			"date":       dateStr,
 			"is_holiday": isHoliday,
 		}
@@ -604,7 +604,8 @@ func checkHoliday(holidaysRepo *HolidaysRepository) func(w http.ResponseWriter, 
 			result["holiday"] = formatHoliday(holiday)
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "holiday_check", result)
+		// Stripe-style: return action result directly
+		return api.WriteAction(w, http.StatusOK, result)
 	}
 }
 
@@ -616,6 +617,7 @@ func checkHoliday(holidaysRepo *HolidaysRepository) func(w http.ResponseWriter, 
 // This mirrors the Node.js formatRoutineWithSpeakers function.
 func formatRoutineWithDeviceMap(routine *Routine, deviceRoomMap map[string]string) map[string]any {
 	result := map[string]any{
+		"object":            "routine", // Stripe-style object type
 		"routine_id":        routine.RoutineID,
 		"name":              routine.Name,
 		"enabled":           routine.Enabled,
@@ -889,6 +891,7 @@ func formatRoutine(routine *Routine) map[string]any {
 
 func formatJob(job *Job) map[string]any {
 	result := map[string]any{
+		"object":        "job", // Stripe-style object type
 		"job_id":        job.JobID,
 		"routine_id":    job.RoutineID,
 		"scheduled_for": rfc3339Millis(job.ScheduledFor),
@@ -946,6 +949,7 @@ func formatJobAsExecution(job *Job, routineNames map[string]string) map[string]a
 	}
 
 	result := map[string]any{
+		"object":          "execution", // Stripe-style object type
 		"id":              job.JobID,
 		"routine_id":      job.RoutineID,
 		"routine_name":    routineName,
@@ -970,7 +974,8 @@ func formatJobAsExecution(job *Job, routineNames map[string]string) map[string]a
 
 func formatHoliday(holiday *Holiday) map[string]any {
 	result := map[string]any{
-		"holiday_id": holiday.Date, // Use date as the ID
+		"object":     "holiday", // Stripe-style object type
+		"holiday_id": holiday.Date,   // Use date as the ID
 		"date":       holiday.Date,
 		"name":       holiday.Name,
 		"is_custom":  holiday.IsCustom,
@@ -1006,8 +1011,9 @@ func unskipNextOccurrence(routinesRepo *RoutinesRepository, _ *devices.Service, 
 			return apperrors.NewAppError(apperrors.ErrorCodeRoutineNotFound, "Routine not found", 404, map[string]any{"routine_id": routineID}, nil)
 		}
 
-		// Return action result with message
-		return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+		// Stripe-style: return action result directly
+		return api.WriteAction(w, http.StatusOK, map[string]any{
+			"object":     "unskip",
 			"message":    "Skip cancelled - routine will execute as scheduled",
 			"routine_id": routine.RoutineID,
 			"skip_next":  false,
@@ -1054,8 +1060,8 @@ func runRoutine(routinesRepo *RoutinesRepository, jobsRepo *JobsRepository) func
 			jobResponse["device_override"] = *input.DeviceOverride
 		}
 
-		// Return 202 Accepted for async execution
-		return api.SingleResponse(w, r, http.StatusAccepted, "job", jobResponse)
+		// Stripe-style: return resource directly (202 Accepted for async execution)
+		return api.WriteResource(w, http.StatusAccepted, jobResponse)
 	}
 }
 
@@ -1087,7 +1093,9 @@ func testRoutine(sceneService *scene.Service) func(w http.ResponseWriter, r *htt
 
 		// For test execution, we just validate and return a preview
 		// Actual execution would require more infrastructure
-		return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+		// Stripe-style: return action result directly
+		return api.WriteAction(w, http.StatusOK, map[string]any{
+			"object":     "routine_test",
 			"status":     "validated",
 			"scene_id":   input.SceneID,
 			"scene_name": existingScene.Name,
@@ -1103,7 +1111,7 @@ func testRoutine(sceneService *scene.Service) func(w http.ResponseWriter, r *htt
 
 func listExecutions(jobsRepo *JobsRepository, routinesRepo *RoutinesRepository) func(w http.ResponseWriter, r *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		limit := 20
+		limit := 50 // Match Node.js default
 		offset := 0
 		statusFilter := ""
 
@@ -1139,13 +1147,9 @@ func listExecutions(jobsRepo *JobsRepository, routinesRepo *RoutinesRepository) 
 			executions = append(executions, formatJobAsExecution(&job, routineNames))
 		}
 
-		pagination := &api.Pagination{
-			Total:   total,
-			Limit:   limit,
-			Offset:  offset,
-			HasMore: offset+len(jobs) < total,
-		}
-		return api.ListResponse(w, r, http.StatusOK, "executions", executions, pagination)
+		hasMore := offset+len(jobs) < total
+		// Stripe-style list response
+		return api.WriteList(w, "/v1/executions", executions, hasMore)
 	}
 }
 
@@ -1179,8 +1183,9 @@ func retryExecution(jobsRepo *JobsRepository) func(w http.ResponseWriter, r *htt
 			return apperrors.NewInternalError("Failed to create retry job")
 		}
 
-		// Return action result
-		return api.ActionResponse(w, r, http.StatusAccepted, map[string]any{
+		// Stripe-style: return action result directly
+		return api.WriteAction(w, http.StatusAccepted, map[string]any{
+			"object":           "retry",
 			"execution_id":     executionID,
 			"new_execution_id": newJob.JobID,
 			"status":           "STARTED",

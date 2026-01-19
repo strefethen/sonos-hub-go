@@ -40,7 +40,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				return apperrors.NewInternalError("Failed to stop playback")
 			}
 
-			return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+			return api.WriteAction(w, http.StatusOK, map[string]any{
+				"object":     "playback_action",
 				"device_id":  body.DeviceID,
 				"action":     "stop",
 				"stopped_at": rfc3339Millis(time.Now()),
@@ -63,7 +64,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				return apperrors.NewInternalError("Failed to pause playback")
 			}
 
-			return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+			return api.WriteAction(w, http.StatusOK, map[string]any{
+				"object":    "playback_action",
 				"device_id": body.DeviceID,
 				"action":    "pause",
 				"paused_at": rfc3339Millis(time.Now()),
@@ -86,7 +88,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				return apperrors.NewInternalError("Failed to start playback")
 			}
 
-			return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+			return api.WriteAction(w, http.StatusOK, map[string]any{
+				"object":     "playback_action",
 				"device_id":  body.DeviceID,
 				"action":     "play",
 				"resumed_at": rfc3339Millis(time.Now()),
@@ -109,7 +112,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				return apperrors.NewInternalError("Failed to skip track")
 			}
 
-			return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+			return api.WriteAction(w, http.StatusOK, map[string]any{
+				"object":     "playback_action",
 				"device_id":  body.DeviceID,
 				"action":     "next",
 				"skipped_at": rfc3339Millis(time.Now()),
@@ -135,7 +139,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				return apperrors.NewInternalError("Failed to skip track")
 			}
 
-			return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+			return api.WriteAction(w, http.StatusOK, map[string]any{
+				"object":     "playback_action",
 				"device_id":  body.DeviceID,
 				"action":     "previous",
 				"skipped_at": rfc3339Millis(time.Now()),
@@ -157,7 +162,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				return apperrors.NewInternalError("Failed to fetch transport state")
 			}
 
-			return api.SingleResponse(w, r, http.StatusOK, "playback_state", map[string]any{
+			return api.WriteResource(w, http.StatusOK, map[string]any{
+				"object":    "playback_state",
 				"device_id": deviceID,
 				"state":     state.CurrentTransportState,
 				"status":    state.CurrentTransportStatus,
@@ -329,7 +335,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				})
 			}
 
-			return api.SingleResponse(w, r, http.StatusOK, "now_playing", map[string]any{
+			return api.WriteResource(w, http.StatusOK, map[string]any{
+				"object":       "now_playing",
 				"groups":       groups,
 				"total_groups": len(groups),
 			})
@@ -374,7 +381,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				})
 			}
 
-			return api.SingleResponse(w, r, http.StatusOK, "groups", map[string]any{
+			return api.WriteResource(w, http.StatusOK, map[string]any{
+				"object":       "groups",
 				"items":        groupsResponse,
 				"total_groups": len(groupsResponse),
 			})
@@ -400,7 +408,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			}
 
 			if len(memberIDs) == 0 {
-				return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+				return api.WriteAction(w, http.StatusOK, map[string]any{
+					"object":                "group_create",
 					"coordinator_device_id": body.CoordinatorDeviceID,
 					"coordinator_uuid":      nil,
 					"coordinator_name":      nil,
@@ -486,7 +495,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				}
 			}
 
-			return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+			return api.WriteAction(w, http.StatusOK, map[string]any{
+				"object":                "group_create",
 				"coordinator_device_id": body.CoordinatorDeviceID,
 				"coordinator_uuid":      coordinatorUUID,
 				"coordinator_name":      zoneAttrs.CurrentZoneName,
@@ -571,7 +581,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				}
 			}
 
-			return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+			return api.WriteAction(w, http.StatusOK, map[string]any{
+				"object":          "ungroup",
 				"ungroup_results": ungroupResults,
 				"all_succeeded":   allSucceeded,
 			})
@@ -630,7 +641,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 			succeeded, failed := countResults(results)
 
-			return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+			return api.WriteAction(w, http.StatusOK, map[string]any{
+				"object":          "volume_action",
 				"device_id":       body.DeviceID,
 				"volume":          target,
 				"previous_volume": currentVolume.CurrentVolume,
@@ -675,7 +687,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			results := setVolumeOnDevices(service, memberIPs, target)
 			succeeded, failed := countResults(results)
 
-			return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+			return api.WriteAction(w, http.StatusOK, map[string]any{
+				"object":          "volume_action",
 				"device_id":       body.DeviceID,
 				"level":           target,
 				"previous_level":  currentVolume.CurrentVolume,
@@ -734,7 +747,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			results := executeVolumeRamp(service, memberIPs, currentVolume.CurrentVolume, target, durationMs, curve)
 			succeeded, failed := countResults(results)
 
-			return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+			return api.WriteAction(w, http.StatusOK, map[string]any{
+				"object":          "volume_ramp",
 				"device_id":       body.DeviceID,
 				"start_level":     currentVolume.CurrentVolume,
 				"target_level":    target,
@@ -780,7 +794,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			})
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "alarms", map[string]any{
+		return api.WriteResource(w, http.StatusOK, map[string]any{
+			"object":             "alarms",
 			"items":              alarms,
 			"alarm_list_version": result.AlarmListVersion,
 		})
@@ -853,13 +868,13 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			})
 		}
 
-		pagination := &api.Pagination{
-			Total:   result.TotalMatches,
-			Limit:   requestedCount,
-			Offset:  startIndex,
-			HasMore: startIndex+len(favorites) < result.TotalMatches,
+		// Add object field to each favorite
+		for i := range favorites {
+			favorites[i]["object"] = "favorite"
 		}
-		return api.ListResponse(w, r, http.StatusOK, "favorites", favorites, pagination)
+
+		hasMore := startIndex+len(favorites) < result.TotalMatches
+		return api.WriteList(w, "/v1/sonos/favorites", favorites, hasMore)
 	}))
 
 	router.Route("/v1/sonos/players", func(players chi.Router) {
@@ -900,9 +915,10 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				})
 			}
 
-			return api.SingleResponse(w, r, http.StatusOK, "players", map[string]any{
-				"items":  playersResponse,
-				"groups": groupSummary,
+			return api.WriteResource(w, http.StatusOK, map[string]any{
+				"object":  "players",
+				"players": playersResponse,
+				"groups":  groupSummary,
 			})
 		}))
 
@@ -944,7 +960,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				}
 			}
 
-			return api.SingleResponse(w, r, http.StatusOK, "player_state", map[string]any{
+			return api.WriteResource(w, http.StatusOK, map[string]any{
+				"object":           "player_state",
 				"device_id":        deviceID,
 				"transport_state":  transportInfo.CurrentTransportState,
 				"transport_status": transportInfo.CurrentTransportStatus,
@@ -1003,7 +1020,8 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				confidence = "LOW"
 			}
 
-			return api.SingleResponse(w, r, http.StatusOK, "tv_status", map[string]any{
+			return api.WriteResource(w, http.StatusOK, map[string]any{
+				"object":          "tv_status",
 				"device_id":       deviceID,
 				"is_tv_active":    isTVActive,
 				"confidence":      confidence,
@@ -1034,7 +1052,7 @@ func RegisterPlayRoutes(router chi.Router, playService *PlayService) {
 			return apperrors.NewInternalError("Failed to start playback: " + err.Error())
 		}
 
-		return api.ActionResponse(w, r, http.StatusOK, result)
+		return api.WriteAction(w, http.StatusOK, result)
 	}))
 
 	// POST /v1/sonos/play/favorite - Play a Sonos favorite
@@ -1060,7 +1078,7 @@ func RegisterPlayRoutes(router chi.Router, playService *PlayService) {
 			return apperrors.NewInternalError("Failed to play favorite: " + err.Error())
 		}
 
-		return api.ActionResponse(w, r, http.StatusOK, result)
+		return api.WriteAction(w, http.StatusOK, result)
 	}))
 
 	// POST /v1/sonos/play/content - Play direct content
@@ -1089,7 +1107,7 @@ func RegisterPlayRoutes(router chi.Router, playService *PlayService) {
 			return apperrors.NewInternalError("Failed to play content: " + err.Error())
 		}
 
-		return api.ActionResponse(w, r, http.StatusOK, result)
+		return api.WriteAction(w, http.StatusOK, result)
 	}))
 
 	// GET /v1/sonos/services - Get all music service statuses
@@ -1113,9 +1131,10 @@ func RegisterPlayRoutes(router chi.Router, playService *PlayService) {
 			return apperrors.NewInternalError("Failed to get services: " + err.Error())
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "services", map[string]any{
-			"items": services,
-			"count": len(services),
+		return api.WriteResource(w, http.StatusOK, map[string]any{
+			"object": "services",
+			"items":  services,
+			"count":  len(services),
 		})
 	}))
 
@@ -1143,7 +1162,7 @@ func RegisterPlayRoutes(router chi.Router, playService *PlayService) {
 			return apperrors.NewInternalError("Failed to get service health: " + err.Error())
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "service_health", status)
+		return api.WriteResource(w, http.StatusOK, status)
 	}))
 }
 

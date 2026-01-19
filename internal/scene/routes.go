@@ -46,7 +46,8 @@ func createScene(service *Service) func(w http.ResponseWriter, r *http.Request) 
 			return apperrors.NewInternalError("Failed to create scene")
 		}
 
-		return api.SingleResponse(w, r, http.StatusCreated, "scene", formatScene(scene))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusCreated, formatScene(scene))
 	}
 }
 
@@ -76,13 +77,9 @@ func listScenes(service *Service) func(w http.ResponseWriter, r *http.Request) e
 			formatted = append(formatted, formatScene(&scene))
 		}
 
-		pagination := &api.Pagination{
-			Total:   total,
-			Limit:   limit,
-			Offset:  offset,
-			HasMore: offset+len(scenes) < total,
-		}
-		return api.ListResponse(w, r, http.StatusOK, "scenes", formatted, pagination)
+		hasMore := offset+len(scenes) < total
+		// Stripe-style list response
+		return api.WriteList(w, "/v1/scenes", formatted, hasMore)
 	}
 }
 
@@ -98,7 +95,8 @@ func getScene(service *Service) func(w http.ResponseWriter, r *http.Request) err
 			return apperrors.NewAppError(apperrors.ErrorCodeSceneNotFound, "Scene not found", 404, map[string]any{"scene_id": sceneID}, nil)
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "scene", formatScene(scene))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatScene(scene))
 	}
 }
 
@@ -119,7 +117,8 @@ func updateScene(service *Service) func(w http.ResponseWriter, r *http.Request) 
 			return apperrors.NewAppError(apperrors.ErrorCodeSceneNotFound, "Scene not found", 404, map[string]any{"scene_id": sceneID}, nil)
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "scene", formatScene(scene))
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatScene(scene))
 	}
 }
 
@@ -185,12 +184,11 @@ func executeScene(service *Service) func(w http.ResponseWriter, r *http.Request)
 			}
 		}
 
-		// Build response with execution at root level
-		// Add idempotent flag to the execution object for API consistency
+		// Stripe-style: return execution object directly
 		execResponse := formatExecution(execution)
 		execResponse["idempotent"] = isIdempotent
 
-		return api.SingleResponse(w, r, http.StatusAccepted, "execution", execResponse)
+		return api.WriteAction(w, http.StatusAccepted, execResponse)
 	}
 }
 
@@ -220,7 +218,9 @@ func stopScene(service *Service) func(w http.ResponseWriter, r *http.Request) er
 			status = http.StatusMultiStatus // 207
 		}
 
-		return api.ActionResponse(w, r, status, map[string]any{
+		// Stripe-style: return action result directly with object type
+		return api.WriteAction(w, status, map[string]any{
+			"object":        "scene_stop",
 			"scene_id":      sceneID,
 			"results":       results,
 			"all_succeeded": allSucceeded,
@@ -257,13 +257,9 @@ func listExecutions(service *Service) func(w http.ResponseWriter, r *http.Reques
 			formatted = append(formatted, formatExecution(&exec))
 		}
 
-		pagination := &api.Pagination{
-			Total:   total,
-			Limit:   limit,
-			Offset:  offset,
-			HasMore: offset+len(executions) < total,
-		}
-		return api.ListResponse(w, r, http.StatusOK, "executions", formatted, pagination)
+		hasMore := offset+len(executions) < total
+		// Stripe-style list response
+		return api.WriteList(w, "/v1/scenes/"+sceneID+"/executions", formatted, hasMore)
 	}
 }
 
@@ -286,6 +282,7 @@ func formatScene(scene *Scene) map[string]any {
 	}
 
 	result := map[string]any{
+		"object":                 "scene", // Stripe-style object type
 		"scene_id":               scene.SceneID,
 		"name":                   scene.Name,
 		"coordinator_preference": scene.CoordinatorPreference,
@@ -357,6 +354,7 @@ func formatExecution(exec *SceneExecution) map[string]any {
 	}
 
 	result := map[string]any{
+		"object":             "scene_execution", // Stripe-style object type
 		"scene_execution_id": exec.SceneExecutionID,
 		"scene_id":           exec.SceneID,
 		"status":             string(exec.Status),

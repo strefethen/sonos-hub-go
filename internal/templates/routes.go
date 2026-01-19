@@ -1,6 +1,8 @@
 package templates
 
 import (
+	"database/sql"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -12,33 +14,57 @@ import (
 
 // RoutineTemplate represents a predefined routine configuration.
 type RoutineTemplate struct {
-	TemplateID   string          `json:"template_id"`
-	Name         string          `json:"name"`
-	Description  string          `json:"description"`
-	Category     string          `json:"category"`
-	Icon         string          `json:"icon,omitempty"`
-	ScheduleType string          `json:"schedule_type"`
-	DefaultTime  string          `json:"default_time,omitempty"`
-	Actions      []TemplateAction `json:"actions"`
-	Tags         []string        `json:"tags,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
+	TemplateID     string  `json:"template_id"`
+	Name           string  `json:"name"`
+	Description    *string `json:"description,omitempty"`
+	Category       string  `json:"category"`
+	SortOrder      int     `json:"sort_order"`
+	Icon           *string `json:"icon,omitempty"`
+	ImageName      *string `json:"image_name,omitempty"`
+	GradientColor1 *string `json:"gradient_color_1,omitempty"`
+	GradientColor2 *string `json:"gradient_color_2,omitempty"`
+	AccentColor    *string `json:"accent_color,omitempty"`
+
+	// Schedule fields
+	Timezone         string  `json:"timezone"`
+	ScheduleType     string  `json:"schedule_type"`
+	ScheduleWeekdays *string `json:"schedule_weekdays,omitempty"`
+	ScheduleMonth    *int    `json:"schedule_month,omitempty"`
+	ScheduleDay      *int    `json:"schedule_day,omitempty"`
+	ScheduleTime     string  `json:"schedule_time"`
+
+	// Speaker targeting
+	SuggestedSpeakers *string `json:"suggested_speakers,omitempty"`
+
+	// Music fields
+	MusicPolicyType            string  `json:"music_policy_type"`
+	MusicSetID                 *string `json:"music_set_id,omitempty"`
+	MusicSonosFavoriteID       *string `json:"music_sonos_favorite_id,omitempty"`
+	MusicNoRepeatWindowMinutes *int    `json:"music_no_repeat_window_minutes,omitempty"`
+	MusicFallbackBehavior      *string `json:"music_fallback_behavior,omitempty"`
+
+	// Behavior fields
+	HolidayBehavior string `json:"holiday_behavior"`
+	ArcTVPolicy     string `json:"arc_tv_policy"`
+
+	CreatedAt time.Time `json:"created_at"`
 }
 
-// TemplateAction represents an action within a template.
-type TemplateAction struct {
-	Type       string         `json:"type"`
-	Parameters map[string]any `json:"parameters,omitempty"`
+// DBPair interface for dependency injection.
+type DBPair interface {
+	Reader() *sql.DB
+	Writer() *sql.DB
 }
 
 // Service provides template management functionality.
 type Service struct {
-	templates []RoutineTemplate
+	reader *sql.DB
 }
 
-// NewService creates a new templates service with embedded templates.
-func NewService() *Service {
+// NewService creates a new templates service that reads from the database.
+func NewService(dbPair DBPair) *Service {
 	return &Service{
-		templates: getEmbeddedTemplates(),
+		reader: dbPair.Reader(),
 	}
 }
 
@@ -53,24 +79,48 @@ func listTemplates(service *Service) func(w http.ResponseWriter, r *http.Request
 	return func(w http.ResponseWriter, r *http.Request) error {
 		category := r.URL.Query().Get("category")
 
-		templates := service.templates
+		var rows *sql.Rows
+		var err error
+
 		if category != "" {
-			filtered := make([]RoutineTemplate, 0)
-			for _, t := range templates {
-				if t.Category == category {
-					filtered = append(filtered, t)
-				}
+			rows, err = service.reader.Query(`
+				SELECT template_id, name, description, category, sort_order, icon, image_name,
+				       gradient_color_1, gradient_color_2, accent_color,
+				       timezone, schedule_type, schedule_weekdays, schedule_month, schedule_day, schedule_time,
+				       suggested_speakers, music_policy_type, music_set_id, music_sonos_favorite_id,
+				       music_no_repeat_window_minutes, music_fallback_behavior,
+				       holiday_behavior, arc_tv_policy, created_at
+				FROM routine_templates
+				WHERE category = ?
+				ORDER BY sort_order, name
+			`, category)
+		} else {
+			rows, err = service.reader.Query(`
+				SELECT template_id, name, description, category, sort_order, icon, image_name,
+				       gradient_color_1, gradient_color_2, accent_color,
+				       timezone, schedule_type, schedule_weekdays, schedule_month, schedule_day, schedule_time,
+				       suggested_speakers, music_policy_type, music_set_id, music_sonos_favorite_id,
+				       music_no_repeat_window_minutes, music_fallback_behavior,
+				       holiday_behavior, arc_tv_policy, created_at
+				FROM routine_templates
+				ORDER BY sort_order, name
+			`)
+		}
+		if err != nil {
+			return apperrors.NewInternalError("Failed to fetch templates")
+		}
+		defer rows.Close()
+
+		templates := make([]map[string]any, 0)
+		for rows.Next() {
+			t, err := scanTemplate(rows)
+			if err != nil {
+				continue
 			}
-			templates = filtered
+			templates = append(templates, formatTemplate(t))
 		}
 
-		formatted := make([]map[string]any, 0, len(templates))
-		for _, t := range templates {
-			formatted = append(formatted, formatTemplate(&t))
-		}
-
-		// Templates is a small fixed list, so pagination is not needed
-		return api.ListResponse(w, r, http.StatusOK, "templates", formatted, nil)
+		return api.WriteList(w, "/v1/routine-templates", templates, false)
 	}
 }
 
@@ -79,187 +129,146 @@ func getTemplate(service *Service) func(w http.ResponseWriter, r *http.Request) 
 	return func(w http.ResponseWriter, r *http.Request) error {
 		templateID := chi.URLParam(r, "template_id")
 
-		var found *RoutineTemplate
-		for _, t := range service.templates {
-			if t.TemplateID == templateID {
-				found = &t
-				break
+		row := service.reader.QueryRow(`
+			SELECT template_id, name, description, category, sort_order, icon, image_name,
+			       gradient_color_1, gradient_color_2, accent_color,
+			       timezone, schedule_type, schedule_weekdays, schedule_month, schedule_day, schedule_time,
+			       suggested_speakers, music_policy_type, music_set_id, music_sonos_favorite_id,
+			       music_no_repeat_window_minutes, music_fallback_behavior,
+			       holiday_behavior, arc_tv_policy, created_at
+			FROM routine_templates
+			WHERE template_id = ?
+		`, templateID)
+
+		t, err := scanTemplateRow(row)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return apperrors.NewNotFoundError("Template not found", map[string]any{
+					"template_id": templateID,
+				})
 			}
+			return apperrors.NewInternalError("Failed to fetch template")
 		}
 
-		if found == nil {
-			return apperrors.NewNotFoundError("Template not found", map[string]any{
-				"template_id": templateID,
-			})
-		}
-
-		return api.SingleResponse(w, r, http.StatusOK, "template", formatTemplate(found))
+		return api.WriteResource(w, http.StatusOK, formatTemplate(t))
 	}
+}
+
+// scanTemplate scans a row into a RoutineTemplate.
+func scanTemplate(rows *sql.Rows) (*RoutineTemplate, error) {
+	var t RoutineTemplate
+	var createdAt string
+
+	err := rows.Scan(
+		&t.TemplateID, &t.Name, &t.Description, &t.Category, &t.SortOrder,
+		&t.Icon, &t.ImageName, &t.GradientColor1, &t.GradientColor2, &t.AccentColor,
+		&t.Timezone, &t.ScheduleType, &t.ScheduleWeekdays, &t.ScheduleMonth, &t.ScheduleDay, &t.ScheduleTime,
+		&t.SuggestedSpeakers, &t.MusicPolicyType, &t.MusicSetID, &t.MusicSonosFavoriteID,
+		&t.MusicNoRepeatWindowMinutes, &t.MusicFallbackBehavior,
+		&t.HolidayBehavior, &t.ArcTVPolicy, &createdAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	if t.CreatedAt.IsZero() {
+		t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+	}
+
+	return &t, nil
+}
+
+// scanTemplateRow scans a single row into a RoutineTemplate.
+func scanTemplateRow(row *sql.Row) (*RoutineTemplate, error) {
+	var t RoutineTemplate
+	var createdAt string
+
+	err := row.Scan(
+		&t.TemplateID, &t.Name, &t.Description, &t.Category, &t.SortOrder,
+		&t.Icon, &t.ImageName, &t.GradientColor1, &t.GradientColor2, &t.AccentColor,
+		&t.Timezone, &t.ScheduleType, &t.ScheduleWeekdays, &t.ScheduleMonth, &t.ScheduleDay, &t.ScheduleTime,
+		&t.SuggestedSpeakers, &t.MusicPolicyType, &t.MusicSetID, &t.MusicSonosFavoriteID,
+		&t.MusicNoRepeatWindowMinutes, &t.MusicFallbackBehavior,
+		&t.HolidayBehavior, &t.ArcTVPolicy, &createdAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	t.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	if t.CreatedAt.IsZero() {
+		t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+	}
+
+	return &t, nil
 }
 
 // formatTemplate formats a RoutineTemplate for JSON response.
 func formatTemplate(t *RoutineTemplate) map[string]any {
 	result := map[string]any{
-		"template_id":   t.TemplateID,
-		"name":          t.Name,
-		"description":   t.Description,
-		"category":      t.Category,
-		"schedule_type": t.ScheduleType,
-		"actions":       formatActions(t.Actions),
-		"created_at":    t.CreatedAt.UTC().Format(time.RFC3339),
+		"object":            "routine_template",
+		"template_id":       t.TemplateID,
+		"name":              t.Name,
+		"category":          t.Category,
+		"sort_order":        t.SortOrder,
+		"timezone":          t.Timezone,
+		"schedule_type":     t.ScheduleType,
+		"schedule_time":     t.ScheduleTime,
+		"music_policy_type": t.MusicPolicyType,
+		"holiday_behavior":  t.HolidayBehavior,
+		"arc_tv_policy":     t.ArcTVPolicy,
+		"created_at":        t.CreatedAt.UTC().Format(time.RFC3339),
 	}
 
-	if t.Icon != "" {
-		result["icon"] = t.Icon
+	if t.Description != nil {
+		result["description"] = *t.Description
 	}
-	if t.DefaultTime != "" {
-		result["default_time"] = t.DefaultTime
+	if t.Icon != nil {
+		result["icon"] = *t.Icon
 	}
-	if len(t.Tags) > 0 {
-		result["tags"] = t.Tags
+	if t.ImageName != nil {
+		result["image_name"] = *t.ImageName
+	}
+	if t.GradientColor1 != nil {
+		result["gradient_color_1"] = *t.GradientColor1
+	}
+	if t.GradientColor2 != nil {
+		result["gradient_color_2"] = *t.GradientColor2
+	}
+	if t.AccentColor != nil {
+		result["accent_color"] = *t.AccentColor
+	}
+	if t.ScheduleWeekdays != nil {
+		var weekdays []int
+		if json.Unmarshal([]byte(*t.ScheduleWeekdays), &weekdays) == nil {
+			result["schedule_weekdays"] = weekdays
+		}
+	}
+	if t.ScheduleMonth != nil {
+		result["schedule_month"] = *t.ScheduleMonth
+	}
+	if t.ScheduleDay != nil {
+		result["schedule_day"] = *t.ScheduleDay
+	}
+	if t.SuggestedSpeakers != nil {
+		var speakers []map[string]any
+		if json.Unmarshal([]byte(*t.SuggestedSpeakers), &speakers) == nil {
+			result["suggested_speakers"] = speakers
+		}
+	}
+	if t.MusicSetID != nil {
+		result["music_set_id"] = *t.MusicSetID
+	}
+	if t.MusicSonosFavoriteID != nil {
+		result["music_sonos_favorite_id"] = *t.MusicSonosFavoriteID
+	}
+	if t.MusicNoRepeatWindowMinutes != nil {
+		result["music_no_repeat_window_minutes"] = *t.MusicNoRepeatWindowMinutes
+	}
+	if t.MusicFallbackBehavior != nil {
+		result["music_fallback_behavior"] = *t.MusicFallbackBehavior
 	}
 
 	return result
-}
-
-// formatActions formats template actions for JSON response.
-func formatActions(actions []TemplateAction) []map[string]any {
-	result := make([]map[string]any, 0, len(actions))
-	for _, a := range actions {
-		action := map[string]any{
-			"type": a.Type,
-		}
-		if a.Parameters != nil {
-			action["parameters"] = a.Parameters
-		}
-		result = append(result, action)
-	}
-	return result
-}
-
-// getEmbeddedTemplates returns the built-in routine templates.
-func getEmbeddedTemplates() []RoutineTemplate {
-	now := time.Now()
-
-	return []RoutineTemplate{
-		{
-			TemplateID:   "morning-wake-up",
-			Name:         "Morning Wake Up",
-			Description:  "Start your day with music to wake up gently",
-			Category:     "morning",
-			Icon:         "sunrise",
-			ScheduleType: "weekly",
-			DefaultTime:  "07:00",
-			Actions: []TemplateAction{
-				{Type: "play_music", Parameters: map[string]any{"source": "music_set"}},
-				{Type: "set_volume", Parameters: map[string]any{"volume": 30, "fade_in": true}},
-			},
-			Tags:      []string{"wake", "morning", "music"},
-			CreatedAt: now,
-		},
-		{
-			TemplateID:   "bedtime-wind-down",
-			Name:         "Bedtime Wind Down",
-			Description:  "Relax before sleep with calming sounds",
-			Category:     "evening",
-			Icon:         "moon",
-			ScheduleType: "weekly",
-			DefaultTime:  "22:00",
-			Actions: []TemplateAction{
-				{Type: "play_music", Parameters: map[string]any{"source": "music_set", "shuffle": true}},
-				{Type: "set_volume", Parameters: map[string]any{"volume": 20}},
-				{Type: "sleep_timer", Parameters: map[string]any{"minutes": 30}},
-			},
-			Tags:      []string{"sleep", "evening", "relax"},
-			CreatedAt: now,
-		},
-		{
-			TemplateID:   "arrival-home",
-			Name:         "Arrival Home",
-			Description:  "Welcome yourself home with your favorite tunes",
-			Category:     "trigger",
-			Icon:         "home",
-			ScheduleType: "once",
-			Actions: []TemplateAction{
-				{Type: "play_music", Parameters: map[string]any{"source": "sonos_favorites"}},
-				{Type: "set_volume", Parameters: map[string]any{"volume": 40}},
-			},
-			Tags:      []string{"home", "arrival", "welcome"},
-			CreatedAt: now,
-		},
-		{
-			TemplateID:   "weekend-morning",
-			Name:         "Weekend Morning",
-			Description:  "Start your weekend with upbeat music",
-			Category:     "morning",
-			Icon:         "sun",
-			ScheduleType: "weekly",
-			DefaultTime:  "09:00",
-			Actions: []TemplateAction{
-				{Type: "play_music", Parameters: map[string]any{"source": "music_set"}},
-				{Type: "set_volume", Parameters: map[string]any{"volume": 45, "fade_in": true}},
-			},
-			Tags:      []string{"weekend", "morning", "upbeat"},
-			CreatedAt: now,
-		},
-		{
-			TemplateID:   "focus-time",
-			Name:         "Focus Time",
-			Description:  "Background music for concentration and productivity",
-			Category:     "productivity",
-			Icon:         "headphones",
-			ScheduleType: "once",
-			Actions: []TemplateAction{
-				{Type: "play_music", Parameters: map[string]any{"source": "music_set", "genre": "ambient"}},
-				{Type: "set_volume", Parameters: map[string]any{"volume": 25}},
-			},
-			Tags:      []string{"focus", "work", "productivity", "ambient"},
-			CreatedAt: now,
-		},
-		{
-			TemplateID:   "dinner-party",
-			Name:         "Dinner Party",
-			Description:  "Set the mood for entertaining guests",
-			Category:     "entertainment",
-			Icon:         "wine",
-			ScheduleType: "once",
-			Actions: []TemplateAction{
-				{Type: "play_music", Parameters: map[string]any{"source": "music_set", "shuffle": true}},
-				{Type: "set_volume", Parameters: map[string]any{"volume": 35}},
-				{Type: "group_speakers", Parameters: map[string]any{"rooms": []string{"living_room", "dining_room"}}},
-			},
-			Tags:      []string{"party", "dinner", "entertainment", "social"},
-			CreatedAt: now,
-		},
-		{
-			TemplateID:   "workout",
-			Name:         "Workout",
-			Description:  "High energy music to power your exercise routine",
-			Category:     "fitness",
-			Icon:         "activity",
-			ScheduleType: "once",
-			Actions: []TemplateAction{
-				{Type: "play_music", Parameters: map[string]any{"source": "music_set", "genre": "workout"}},
-				{Type: "set_volume", Parameters: map[string]any{"volume": 60}},
-			},
-			Tags:      []string{"workout", "exercise", "fitness", "energy"},
-			CreatedAt: now,
-		},
-		{
-			TemplateID:   "kids-bedtime",
-			Name:         "Kids Bedtime",
-			Description:  "Gentle lullabies and stories for children",
-			Category:     "kids",
-			Icon:         "star",
-			ScheduleType: "weekly",
-			DefaultTime:  "19:30",
-			Actions: []TemplateAction{
-				{Type: "play_music", Parameters: map[string]any{"source": "music_set", "genre": "lullaby"}},
-				{Type: "set_volume", Parameters: map[string]any{"volume": 15}},
-				{Type: "sleep_timer", Parameters: map[string]any{"minutes": 45}},
-			},
-			Tags:      []string{"kids", "bedtime", "lullaby", "children"},
-			CreatedAt: now,
-		},
-	}
 }

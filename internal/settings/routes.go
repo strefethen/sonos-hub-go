@@ -65,7 +65,7 @@ func getTVRoutingSettings(service *Service) func(w http.ResponseWriter, r *http.
 			return apperrors.NewInternalError("Failed to get TV routing settings")
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "settings", formatTVRoutingSettings(settings))
+		return api.WriteResource(w, http.StatusOK, formatTVRoutingSettings(settings))
 	}
 }
 
@@ -108,64 +108,88 @@ func updateTVRoutingSettings(service *Service) func(w http.ResponseWriter, r *ht
 			return apperrors.NewInternalError("Failed to update TV routing settings")
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "settings", formatTVRoutingSettings(settings))
+		return api.WriteResource(w, http.StatusOK, formatTVRoutingSettings(settings))
 	}
 }
 
-// GetTVRoutingSettings retrieves the current TV routing settings.
+// GetTVRoutingSettings retrieves the current TV routing settings from key-value store.
 func (s *Service) GetTVRoutingSettings() (*TVRoutingSettings, error) {
-	var settings TVRoutingSettings
-	var fallbackRoomsJSON sql.NullString
-	var fallbackDeviceID sql.NullString
-	var alwaysSkipOnTV int
+	// Default settings
+	settings := &TVRoutingSettings{
+		ArcTVPolicy:      "USE_FALLBACK",
+		AlwaysSkipOnTV:   false,
+		RetryOnTVTimeout: 5,
+		FallbackRooms:    []string{},
+		UpdatedAt:        time.Now(),
+	}
+
+	// Try to load from JSON blob first (new format)
+	var value sql.NullString
 	var updatedAt string
-
 	err := s.reader.QueryRow(`
-		SELECT arc_tv_policy, fallback_device_id, fallback_rooms_json, always_skip_on_tv,
-			retry_on_tv_timeout_seconds, updated_at
-		FROM settings
-		WHERE setting_key = 'tv_routing'
-	`).Scan(&settings.ArcTVPolicy, &fallbackDeviceID, &fallbackRoomsJSON, &alwaysSkipOnTV,
-		&settings.RetryOnTVTimeout, &updatedAt)
+		SELECT value, updated_at FROM settings WHERE key = 'tv_routing'
+	`).Scan(&value, &updatedAt)
 
+	if err == nil && value.Valid && value.String != "" {
+		// New JSON format
+		if err := json.Unmarshal([]byte(value.String), settings); err != nil {
+			s.logger.Printf("Failed to parse tv_routing JSON: %v", err)
+		}
+		settings.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		if settings.UpdatedAt.IsZero() {
+			settings.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
+		}
+		return settings, nil
+	}
+
+	// Fall back to individual keys (legacy format)
+	rows, err := s.reader.Query(`
+		SELECT key, value, updated_at FROM settings
+		WHERE key IN ('tv_routing_enabled', 'tv_default_fallback_device_id', 'tv_default_policy')
+	`)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			// Return defaults
-			return &TVRoutingSettings{
-				ArcTVPolicy:      "SKIP",
-				AlwaysSkipOnTV:   false,
-				RetryOnTVTimeout: 5,
-				FallbackRooms:    []string{},
-				UpdatedAt:        time.Now(),
-			}, nil
+			return settings, nil
 		}
 		return nil, err
 	}
+	defer rows.Close()
 
-	settings.AlwaysSkipOnTV = alwaysSkipOnTV == 1
-
-	if fallbackDeviceID.Valid {
-		settings.FallbackDeviceID = &fallbackDeviceID.String
-	}
-
-	if fallbackRoomsJSON.Valid && fallbackRoomsJSON.String != "" {
-		if err := json.Unmarshal([]byte(fallbackRoomsJSON.String), &settings.FallbackRooms); err != nil {
-			s.logger.Printf("Failed to parse fallback_rooms_json: %v", err)
-			settings.FallbackRooms = []string{}
+	var latestUpdate time.Time
+	for rows.Next() {
+		var key, val, ts string
+		if err := rows.Scan(&key, &val, &ts); err != nil {
+			continue
 		}
-	} else {
-		settings.FallbackRooms = []string{}
+
+		parsed, _ := time.Parse(time.RFC3339, ts)
+		if parsed.IsZero() {
+			parsed, _ = time.Parse("2006-01-02 15:04:05", ts)
+		}
+		if parsed.After(latestUpdate) {
+			latestUpdate = parsed
+		}
+
+		switch key {
+		case "tv_default_policy":
+			settings.ArcTVPolicy = val
+		case "tv_default_fallback_device_id":
+			if val != "" {
+				settings.FallbackDeviceID = &val
+			}
+		case "tv_routing_enabled":
+			settings.AlwaysSkipOnTV = val != "true"
+		}
 	}
 
-	settings.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
-	if settings.UpdatedAt.IsZero() {
-		settings.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
+	if !latestUpdate.IsZero() {
+		settings.UpdatedAt = latestUpdate
 	}
 
-	return &settings, nil
+	return settings, nil
 }
 
-// UpdateTVRoutingSettings updates the TV routing settings.
+// UpdateTVRoutingSettings updates the TV routing settings using JSON blob in key-value store.
 func (s *Service) UpdateTVRoutingSettings(input UpdateTVRoutingInput) (*TVRoutingSettings, error) {
 	// Get current settings
 	current, err := s.GetTVRoutingSettings()
@@ -190,48 +214,34 @@ func (s *Service) UpdateTVRoutingSettings(input UpdateTVRoutingInput) (*TVRoutin
 		current.RetryOnTVTimeout = *input.RetryOnTVTimeout
 	}
 
-	// Serialize fallback rooms
-	var fallbackRoomsJSON *string
-	if len(current.FallbackRooms) > 0 {
-		bytes, err := json.Marshal(current.FallbackRooms)
-		if err != nil {
-			return nil, err
-		}
-		str := string(bytes)
-		fallbackRoomsJSON = &str
-	}
+	// Serialize to JSON
+	now := time.Now().UTC()
+	current.UpdatedAt = now
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	alwaysSkipInt := 0
-	if current.AlwaysSkipOnTV {
-		alwaysSkipInt = 1
-	}
-
-	// Upsert the settings
-	_, err = s.writer.Exec(`
-		INSERT INTO settings (setting_key, arc_tv_policy, fallback_device_id, fallback_rooms_json,
-			always_skip_on_tv, retry_on_tv_timeout_seconds, updated_at)
-		VALUES ('tv_routing', ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(setting_key) DO UPDATE SET
-			arc_tv_policy = excluded.arc_tv_policy,
-			fallback_device_id = excluded.fallback_device_id,
-			fallback_rooms_json = excluded.fallback_rooms_json,
-			always_skip_on_tv = excluded.always_skip_on_tv,
-			retry_on_tv_timeout_seconds = excluded.retry_on_tv_timeout_seconds,
-			updated_at = excluded.updated_at
-	`, current.ArcTVPolicy, current.FallbackDeviceID, fallbackRoomsJSON, alwaysSkipInt,
-		current.RetryOnTVTimeout, now)
+	jsonBytes, err := json.Marshal(current)
 	if err != nil {
 		return nil, err
 	}
 
-	current.UpdatedAt = time.Now().UTC()
+	// Upsert the settings as JSON blob
+	_, err = s.writer.Exec(`
+		INSERT INTO settings (key, value, updated_at)
+		VALUES ('tv_routing', ?, ?)
+		ON CONFLICT(key) DO UPDATE SET
+			value = excluded.value,
+			updated_at = excluded.updated_at
+	`, string(jsonBytes), now.Format(time.RFC3339))
+	if err != nil {
+		return nil, err
+	}
+
 	return current, nil
 }
 
 // formatTVRoutingSettings formats TVRoutingSettings for JSON response.
 func formatTVRoutingSettings(settings *TVRoutingSettings) map[string]any {
 	result := map[string]any{
+		"object":                      "tv_routing_settings",
 		"arc_tv_policy":               settings.ArcTVPolicy,
 		"always_skip_on_tv":           settings.AlwaysSkipOnTV,
 		"retry_on_tv_timeout_seconds": settings.RetryOnTVTimeout,
