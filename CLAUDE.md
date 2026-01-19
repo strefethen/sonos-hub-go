@@ -257,59 +257,64 @@ curl -H "X-Test-Mode: true" http://localhost:9000/v1/devices
 
 ## API Response Format
 
-All endpoints follow the Modified Stripe Style with resource-specific keys (not generic `data`):
+All endpoints follow Stripe API conventions:
 
 ```json
-// Success - single resource (uses singular resource key)
+// Single resource - returned directly with object type
 {
-    "request_id": "uuid",
-    "routine": { ... }
+    "id": "rtn_abc123",
+    "object": "routine",
+    "name": "Morning Music",
+    "enabled": true,
+    ...
 }
 
-// Success - collection (uses plural resource key)
+// Collection/List - uses generic "data" array (path defines resource)
 {
-    "request_id": "uuid",
-    "routines": [ ... ],
-    "pagination": {
-        "total": 100,
-        "limit": 20,
-        "offset": 0,
-        "has_more": true
-    }
+    "object": "list",
+    "data": [ ... ],
+    "has_more": true,
+    "url": "/v1/routines"
+}
+// Pagination: use ?limit=N&starting_after=id or ?ending_before=id
+
+// Create/Update - returns the resource directly
+{
+    "id": "rtn_abc123",
+    "object": "routine",
+    ...
 }
 
-// Success - action result (uses "result" key)
+// Action result - returns relevant data flat
 {
-    "request_id": "uuid",
-    "result": {
-        "execution_id": "...",
-        "status": "started"
-    }
+    "object": "execution",
+    "id": "exec_xyz789",
+    "status": "started"
 }
 
-// Error
+// Error - wrapped in error object
 {
-    "request_id": "uuid",
     "error": {
-        "code": "SCENE_NOT_FOUND",
-        "message": "Scene not found"
+        "type": "invalid_request_error",
+        "code": "resource_not_found",
+        "message": "Routine not found"
     }
 }
 ```
 
-### Resource Key Mapping
+### Object Types
 
-| Endpoint Pattern | Single Key | Collection Key |
-|------------------|------------|----------------|
-| `/v1/routines` | `routine` | `routines` |
-| `/v1/scenes` | `scene` | `scenes` |
-| `/v1/devices` | `device` | `devices` |
-| `/v1/music/sets` | `set` | `sets` |
-| `/v1/audit/events` | `event` | `events` |
-| `/v1/sonos/favorites` | - | `favorites` |
-| `/v1/settings/*` | `settings` | - |
-| `/v1/dashboard` | `dashboard` | - |
-| `/v1/system/info` | `info` | - |
+Each resource includes an `object` field identifying its type:
+
+| Resource | Object Type |
+|----------|-------------|
+| Routine | `routine` |
+| Scene | `scene` |
+| Device | `device` |
+| Music Set | `music_set` |
+| Execution | `execution` |
+| Favorite | `favorite` |
+| List response | `list` |
 
 ## Key Dependencies
 
