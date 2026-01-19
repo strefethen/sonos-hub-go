@@ -24,6 +24,7 @@ import (
 	"github.com/strefethen/sonos-hub-go/internal/settings"
 	"github.com/strefethen/sonos-hub-go/internal/sonos"
 	"github.com/strefethen/sonos-hub-go/internal/sonos/soap"
+	"github.com/strefethen/sonos-hub-go/internal/sonoscloud"
 	"github.com/strefethen/sonos-hub-go/internal/system"
 	"github.com/strefethen/sonos-hub-go/internal/templates"
 )
@@ -91,6 +92,9 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 	sonosService := sonos.NewService(deviceService, soapClient, cfg.DefaultSonosIP, time.Duration(cfg.SonosTimeoutMs)*time.Millisecond)
 	sonos.RegisterRoutes(router, sonosService)
 
+	playService := sonos.NewPlayService(soapClient, deviceService, time.Duration(cfg.SonosTimeoutMs)*time.Millisecond, nil)
+	sonos.RegisterPlayRoutes(router, playService)
+
 	sceneService := scene.NewService(cfg, dbPair, nil, deviceService, soapClient)
 	scene.RegisterRoutes(router, sceneService)
 
@@ -121,12 +125,19 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 	system.RegisterRoutes(router, systemService)
 
 	// Create templates service
-	templatesService := templates.NewService()
+	templatesService := templates.NewService(dbPair)
 	templates.RegisterRoutes(router, templatesService)
 
 	// Create settings service
 	settingsService := settings.NewService(dbPair, nil)
 	settings.RegisterRoutes(router, settingsService)
+
+	// Create Sonos Cloud service (only if configured)
+	if cfg.SonosClientID != "" && cfg.SonosClientSecret != "" {
+		sonosCloudRepo := sonoscloud.NewRepository(dbPair)
+		sonosCloudClient := sonoscloud.NewClient(cfg.SonosClientID, cfg.SonosClientSecret, "", sonosCloudRepo)
+		sonoscloud.RegisterRoutes(router, sonosCloudClient)
+	}
 
 	// Serve static files
 	router.Handle("/v1/assets/*", http.StripPrefix("/v1/assets/", http.FileServer(http.Dir("./assets"))))
