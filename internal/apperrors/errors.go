@@ -1,5 +1,9 @@
 package apperrors
 
+// =============================================================================
+// Error Codes
+// =============================================================================
+
 type ErrorCode string
 
 const (
@@ -56,11 +60,36 @@ type Remediation struct {
 }
 
 // ErrorBody is the serialized error payload.
+// Deprecated: Use StripeErrorBody for Stripe API-style errors.
 type ErrorBody struct {
 	Code        ErrorCode      `json:"code"`
 	Message     string         `json:"message"`
 	Details     map[string]any `json:"details,omitempty"`
 	Remediation *Remediation   `json:"remediation,omitempty"`
+}
+
+// =============================================================================
+// Stripe API Error Types
+// =============================================================================
+
+// ErrorType categorizes errors following Stripe API conventions.
+type ErrorType string
+
+const (
+	// ErrorTypeInvalidRequest indicates invalid parameters, missing required fields, etc.
+	ErrorTypeInvalidRequest ErrorType = "invalid_request_error"
+	// ErrorTypeAPIError indicates an internal API error.
+	ErrorTypeAPIError ErrorType = "api_error"
+	// ErrorTypeAuthError indicates authentication or authorization failure.
+	ErrorTypeAuthError ErrorType = "authentication_error"
+)
+
+// StripeErrorBody is the Stripe-style error payload.
+// Format: {"type": "invalid_request_error", "code": "NOT_FOUND", "message": "..."}
+type StripeErrorBody struct {
+	Type    ErrorType `json:"type"`
+	Code    string    `json:"code"`
+	Message string    `json:"message"`
 }
 
 // AppError is the base error type for HTTP responses.
@@ -88,6 +117,24 @@ func (err *AppError) ErrorBody() ErrorBody {
 		body.Remediation = err.Remediation
 	}
 	return body
+}
+
+// StripeErrorBody returns the error in Stripe API format.
+func (err *AppError) StripeErrorBody() StripeErrorBody {
+	// Map status code to error type
+	errType := ErrorTypeAPIError
+	switch {
+	case err.StatusCode >= 400 && err.StatusCode < 500:
+		errType = ErrorTypeInvalidRequest
+	case err.StatusCode == 401 || err.StatusCode == 403:
+		errType = ErrorTypeAuthError
+	}
+
+	return StripeErrorBody{
+		Type:    errType,
+		Code:    string(err.Code),
+		Message: err.Message,
+	}
 }
 
 func NewAppError(code ErrorCode, message string, statusCode int, details map[string]any, remediation *Remediation) *AppError {
