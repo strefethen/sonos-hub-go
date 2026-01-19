@@ -123,3 +123,23 @@ type PlaySetInput struct {
 type SelectItemInput struct {
 	NoRepeatWindowMinutes *int `json:"no_repeat_window_minutes,omitempty"`
 }
+
+// MusicContent represents content that can be added to a music set.
+// This is the iOS-compatible format used by the /content endpoints.
+type MusicContent struct {
+	Type        string  `json:"type"`                   // "sonos_favorite", "apple_music", "direct"
+	FavoriteID  *string `json:"favorite_id,omitempty"`  // For sonos_favorite type
+	Service     *string `json:"service,omitempty"`      // "spotify", "apple_music"
+	ContentType *string `json:"content_type,omitempty"` // "playlist", "album", "track", "station"
+	ContentID   *string `json:"content_id,omitempty"`   // Service-specific ID
+}
+
+// AddContentInput contains the input for adding content to a music set.
+// Used by POST /v1/music/sets/{setId}/content (iOS app format).
+type AddContentInput struct {
+	MusicContent   MusicContent `json:"music_content"`
+	ServiceLogoURL *string      `json:"service_logo_url,omitempty"`
+	ServiceName    *string      `json:"service_name,omitempty"`
+	DisplayName    *string      `json:"display_name,omitempty"`
+	ArtworkURL     *string      `json:"artwork_url,omitempty"`
+}

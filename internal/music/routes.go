@@ -35,6 +35,10 @@ func RegisterRoutes(router chi.Router, service *Service) {
 	// History
 	router.Method(http.MethodGet, "/v1/music/sets/{set_id}/history", api.Handler(getHistory(service)))
 
+	// Content management (iOS app format)
+	router.Method(http.MethodPost, "/v1/music/sets/{set_id}/content", api.Handler(addContent(service)))
+	router.Method(http.MethodDelete, "/v1/music/sets/{set_id}/content/{position}", api.Handler(removeContentByPosition(service)))
+
 	// Play music set on device
 	router.Method(http.MethodPost, "/v1/music/sets/{set_id}/play", api.Handler(playSet(service)))
 
@@ -75,8 +79,9 @@ func createSet(service *Service) func(w http.ResponseWriter, r *http.Request) er
 			return apperrors.NewInternalError("Failed to create set")
 		}
 
-		// Return standardized response with "set" key
+		// Stripe-style: return resource directly
 		setResponse := map[string]any{
+			"object":           "music_set", // Stripe-style object type
 			"set_id":           set.SetID,
 			"name":             set.Name,
 			"selection_policy": set.SelectionPolicy,
@@ -86,7 +91,7 @@ func createSet(service *Service) func(w http.ResponseWriter, r *http.Request) er
 			"created_at":       rfc3339Millis(set.CreatedAt),
 			"updated_at":       rfc3339Millis(set.UpdatedAt),
 		}
-		return api.SingleResponse(w, r, http.StatusCreated, "set", setResponse)
+		return api.WriteResource(w, http.StatusCreated, setResponse)
 	}
 }
 
@@ -138,8 +143,8 @@ func listSets(service *Service) func(w http.ResponseWriter, r *http.Request) err
 			formatted = append(formatted, formattedSet)
 		}
 
-		// Return standardized response with request_id (no pagination for small fixed list)
-		return api.ListResponse(w, r, http.StatusOK, "sets", formatted, nil)
+		// Stripe-style list response (no pagination for small fixed list)
+		return api.WriteList(w, "/v1/music/sets", formatted, false)
 	}
 }
 
@@ -214,8 +219,9 @@ func getSet(service *Service) func(w http.ResponseWriter, r *http.Request) error
 			formattedItems = append(formattedItems, formattedItem)
 		}
 
-		// Build standardized response with "set" key
+		// Stripe-style: return resource directly
 		setResponse := map[string]any{
+			"object":           "music_set", // Stripe-style object type
 			"set_id":           set.SetID,
 			"name":             set.Name,
 			"selection_policy": set.SelectionPolicy,
@@ -239,7 +245,7 @@ func getSet(service *Service) func(w http.ResponseWriter, r *http.Request) error
 			setResponse["service_names"] = nil
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "set", setResponse)
+		return api.WriteResource(w, http.StatusOK, setResponse)
 	}
 }
 
@@ -271,8 +277,9 @@ func updateSet(service *Service) func(w http.ResponseWriter, r *http.Request) er
 			return apperrors.NewInternalError("Failed to update set")
 		}
 
-		// Return standardized response with "set" key
+		// Stripe-style: return resource directly
 		setResponse := map[string]any{
+			"object":           "music_set", // Stripe-style object type
 			"set_id":           set.SetID,
 			"name":             set.Name,
 			"selection_policy": set.SelectionPolicy,
@@ -282,7 +289,7 @@ func updateSet(service *Service) func(w http.ResponseWriter, r *http.Request) er
 			"created_at":       rfc3339Millis(set.CreatedAt),
 			"updated_at":       rfc3339Millis(set.UpdatedAt),
 		}
-		return api.SingleResponse(w, r, http.StatusOK, "set", setResponse)
+		return api.WriteResource(w, http.StatusOK, setResponse)
 	}
 }
 
@@ -336,8 +343,9 @@ func addItem(service *Service) func(w http.ResponseWriter, r *http.Request) erro
 			"favorite_id": item.SonosFavoriteID,
 		}
 
-		// Return standardized response with "item" key
+		// Stripe-style: return resource directly
 		itemResponse := map[string]any{
+			"object":            "set_item", // Stripe-style object type
 			"set_id":            item.SetID,
 			"sonos_favorite_id": item.SonosFavoriteID,
 			"content_type":      item.ContentType,
@@ -356,7 +364,7 @@ func addItem(service *Service) func(w http.ResponseWriter, r *http.Request) erro
 			itemResponse["service_name"] = *item.ServiceName
 		}
 
-		return api.SingleResponse(w, r, http.StatusCreated, "item", itemResponse)
+		return api.WriteResource(w, http.StatusCreated, itemResponse)
 	}
 }
 
@@ -392,13 +400,9 @@ func listItems(service *Service) func(w http.ResponseWriter, r *http.Request) er
 			formatted = append(formatted, formatItem(&item))
 		}
 
-		pagination := &api.Pagination{
-			Total:   total,
-			Limit:   limit,
-			Offset:  offset,
-			HasMore: offset+len(items) < total,
-		}
-		return api.ListResponse(w, r, http.StatusOK, "items", formatted, pagination)
+		hasMore := offset+len(items) < total
+		// Stripe-style list response
+		return api.WriteList(w, "/v1/music/sets/"+setID+"/items", formatted, hasMore)
 	}
 }
 
@@ -458,8 +462,9 @@ func reorderItems(service *Service) func(w http.ResponseWriter, r *http.Request)
 			return apperrors.NewInternalError("Failed to reorder items")
 		}
 
-		// Return standardized action response
-		return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+		// Stripe-style: return action result directly
+		return api.WriteAction(w, http.StatusOK, map[string]any{
+			"object":  "reorder",
 			"success": true,
 		})
 	}
@@ -497,19 +502,16 @@ func getHistory(service *Service) func(w http.ResponseWriter, r *http.Request) e
 			formatted = append(formatted, formatHistory(&h))
 		}
 
-		pagination := &api.Pagination{
-			Total:   total,
-			Limit:   limit,
-			Offset:  offset,
-			HasMore: offset+len(history) < total,
-		}
-		return api.ListResponse(w, r, http.StatusOK, "history", formatted, pagination)
+		hasMore := offset+len(history) < total
+		// Stripe-style list response
+		return api.WriteList(w, "/v1/music/sets/"+setID+"/history", formatted, hasMore)
 	}
 }
 
 // formatSet formats a MusicSet for JSON response.
 func formatSet(set *MusicSet) map[string]any {
 	result := map[string]any{
+		"object":           "music_set", // Stripe-style object type
 		"set_id":           set.SetID,
 		"name":             set.Name,
 		"selection_policy": set.SelectionPolicy,
@@ -526,11 +528,12 @@ func formatSet(set *MusicSet) map[string]any {
 // formatItem formats a SetItem for JSON response.
 func formatItem(item *SetItem) map[string]any {
 	result := map[string]any{
-		"set_id":           item.SetID,
+		"object":            "set_item", // Stripe-style object type
+		"set_id":            item.SetID,
 		"sonos_favorite_id": item.SonosFavoriteID,
-		"position":         item.Position,
-		"content_type":     item.ContentType,
-		"added_at":         rfc3339Millis(item.AddedAt),
+		"position":          item.Position,
+		"content_type":      item.ContentType,
+		"added_at":          rfc3339Millis(item.AddedAt),
 	}
 
 	if item.ServiceLogoURL != nil {
@@ -549,9 +552,10 @@ func formatItem(item *SetItem) map[string]any {
 // formatHistory formats a PlayHistory for JSON response.
 func formatHistory(h *PlayHistory) map[string]any {
 	result := map[string]any{
-		"id":               h.ID,
+		"object":            "play_history", // Stripe-style object type
+		"id":                h.ID,
 		"sonos_favorite_id": h.SonosFavoriteID,
-		"played_at":        rfc3339Millis(h.PlayedAt),
+		"played_at":         rfc3339Millis(h.PlayedAt),
 	}
 
 	if h.SetID != nil {
@@ -594,6 +598,16 @@ func (e *EmptySetError) Error() string {
 	return "set is empty: " + e.SetID
 }
 
+// PositionNotFoundError represents an item not found at a specific position.
+type PositionNotFoundError struct {
+	SetID    string
+	Position int
+}
+
+func (e *PositionNotFoundError) Error() string {
+	return "item not found at position"
+}
+
 // isSetNotFoundError checks if the error is a SetNotFoundError.
 func isSetNotFoundError(err error) bool {
 	_, ok := err.(*SetNotFoundError)
@@ -610,6 +624,142 @@ func isItemNotFoundError(err error) bool {
 func isEmptySetError(err error) bool {
 	_, ok := err.(*EmptySetError)
 	return ok
+}
+
+// isPositionNotFoundError checks if the error is a PositionNotFoundError.
+func isPositionNotFoundError(err error) bool {
+	_, ok := err.(*PositionNotFoundError)
+	return ok
+}
+
+// ==========================================================================
+// Content Management Handlers (iOS app format)
+// ==========================================================================
+
+// addContent handles POST /v1/music/sets/{set_id}/content
+// This endpoint uses the MusicContent format expected by the iOS app.
+func addContent(service *Service) func(w http.ResponseWriter, r *http.Request) error {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		setID := chi.URLParam(r, "set_id")
+
+		var input AddContentInput
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			return apperrors.NewValidationError("invalid request body", nil)
+		}
+
+		// Validate music_content
+		if input.MusicContent.Type == "" {
+			return apperrors.NewValidationError("music_content.type is required", nil)
+		}
+
+		// For sonos_favorite type, require favorite_id
+		if input.MusicContent.Type == "sonos_favorite" && (input.MusicContent.FavoriteID == nil || *input.MusicContent.FavoriteID == "") {
+			return apperrors.NewValidationError("music_content.favorite_id is required for sonos_favorite type", nil)
+		}
+
+		// Build sonos_favorite_id from the music content
+		// For sonos favorites, use the favorite_id directly
+		// For other types, construct a unique identifier
+		var sonosFavoriteID string
+		if input.MusicContent.Type == "sonos_favorite" && input.MusicContent.FavoriteID != nil {
+			sonosFavoriteID = *input.MusicContent.FavoriteID
+		} else if input.MusicContent.ContentID != nil {
+			// For streaming services, use service:content_id format
+			serviceName := "unknown"
+			if input.MusicContent.Service != nil {
+				serviceName = *input.MusicContent.Service
+			}
+			sonosFavoriteID = serviceName + ":" + *input.MusicContent.ContentID
+		} else {
+			return apperrors.NewValidationError("music_content must have favorite_id or content_id", nil)
+		}
+
+		// Build content_json to store the full MusicContent
+		contentJSON, err := json.Marshal(input.MusicContent)
+		if err != nil {
+			return apperrors.NewInternalError("Failed to serialize music content")
+		}
+		contentJSONStr := string(contentJSON)
+
+		// Create AddItemInput from the content
+		addInput := AddItemInput{
+			SonosFavoriteID: sonosFavoriteID,
+			ServiceLogoURL:  input.ServiceLogoURL,
+			ServiceName:     input.ServiceName,
+			ContentType:     input.MusicContent.Type,
+			ContentJSON:     &contentJSONStr,
+		}
+
+		item, err := service.AddItem(setID, addInput)
+		if err != nil {
+			if isSetNotFoundError(err) {
+				return apperrors.NewAppError(apperrors.ErrorCodeSetNotFound, "Set not found", 404, map[string]any{"set_id": setID}, nil)
+			}
+			return apperrors.NewInternalError("Failed to add content to set")
+		}
+
+		// Stripe-style: return resource directly
+		itemResponse := map[string]any{
+			"object":            "set_item", // Stripe-style object type
+			"set_id":            item.SetID,
+			"sonos_favorite_id": item.SonosFavoriteID,
+			"content_type":      item.ContentType,
+			"music_content":     input.MusicContent,
+			"position":          item.Position,
+			"added_at":          rfc3339Millis(item.AddedAt),
+			"service_logo_url":  nil,
+			"service_name":      nil,
+			"display_name":      nil,
+			"artwork_url":       nil,
+		}
+		if item.ServiceLogoURL != nil {
+			itemResponse["service_logo_url"] = *item.ServiceLogoURL
+		}
+		if item.ServiceName != nil {
+			itemResponse["service_name"] = *item.ServiceName
+		}
+		if input.DisplayName != nil {
+			itemResponse["display_name"] = *input.DisplayName
+		}
+		if input.ArtworkURL != nil {
+			itemResponse["artwork_url"] = *input.ArtworkURL
+		}
+
+		return api.WriteResource(w, http.StatusCreated, itemResponse)
+	}
+}
+
+// removeContentByPosition handles DELETE /v1/music/sets/{set_id}/content/{position}
+// Removes an item from a music set by its position (0-indexed).
+func removeContentByPosition(service *Service) func(w http.ResponseWriter, r *http.Request) error {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		setID := chi.URLParam(r, "set_id")
+		positionStr := chi.URLParam(r, "position")
+
+		position, err := strconv.Atoi(positionStr)
+		if err != nil || position < 0 {
+			return apperrors.NewValidationError("position must be a non-negative integer", map[string]any{
+				"provided": positionStr,
+			})
+		}
+
+		err = service.RemoveItemByPosition(setID, position)
+		if err != nil {
+			if isSetNotFoundError(err) {
+				return apperrors.NewAppError(apperrors.ErrorCodeSetNotFound, "Set not found", 404, map[string]any{"set_id": setID}, nil)
+			}
+			if isPositionNotFoundError(err) {
+				return apperrors.NewAppError("ITEM_NOT_FOUND", "Item not found at position", 404, map[string]any{
+					"set_id":   setID,
+					"position": position,
+				}, nil)
+			}
+			return apperrors.NewInternalError("Failed to remove content from set")
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+		return nil
+	}
 }
 
 // ==========================================================================
@@ -682,9 +832,10 @@ func playSet(service *Service) func(w http.ResponseWriter, r *http.Request) erro
 		// 3. Create ephemeral scene with name `Play: ${set.name}`
 		// 4. Execute scene with musicContent and favoriteId
 		// 5. Schedule cleanup of ephemeral scene after 5 minutes
-		// For now, return stub response with standardized format
+		// For now, return stub response with Stripe-style format
 
-		return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+		return api.WriteAction(w, http.StatusOK, map[string]any{
+			"object":             "play_set",
 			"scene_id":           nil, // Would be created scene ID
 			"scene_execution_id": nil, // Would be execution ID
 			"music_content":      musicContent,
@@ -729,8 +880,9 @@ func searchMusic(service *Service) func(w http.ResponseWriter, r *http.Request) 
 		}
 
 		// Apple Music search not yet implemented - return proper format with empty results
-		// This matches Node.js music-search.ts response format, with standardized envelope
-		return api.SingleResponse(w, r, http.StatusOK, "search", map[string]any{
+		// This matches Node.js music-search.ts response format, with Stripe-style envelope
+		return api.WriteResource(w, http.StatusOK, map[string]any{
+			"object":   "music_search",
 			"provider": provider,
 			"query":    query,
 			"results":  map[string][]any{}, // Empty results grouped by type
@@ -769,8 +921,9 @@ func getMusicSuggestions(service *Service) func(w http.ResponseWriter, r *http.R
 		}
 
 		// Apple Music suggestions not yet implemented - return proper format
-		// Matches Node.js music-search.ts suggestions response, with standardized envelope
-		return api.SingleResponse(w, r, http.StatusOK, "suggestions", map[string]any{
+		// Matches Node.js music-search.ts suggestions response, with Stripe-style envelope
+		return api.WriteResource(w, http.StatusOK, map[string]any{
+			"object":      "music_suggestions",
 			"provider":    provider,
 			"query":       query,
 			"terms":       []map[string]string{}, // Empty terms array
@@ -796,23 +949,32 @@ type MusicProvider struct {
 func listProviders(service *Service) func(w http.ResponseWriter, r *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		// Return available search providers
-		// Matches Node.js music-search.ts /v1/music/providers response, with standardized envelope
+		// Matches Node.js music-search.ts /v1/music/providers response, with Stripe-style envelope
 		providers := []map[string]any{
 			{
+				"object":               "music_provider",
 				"name":                 "apple_music",
 				"display_name":         "Apple Music",
 				"supported_types":      []string{"albums", "artists", "tracks", "playlists", "stations"},
 				"supports_suggestions": true,
 			},
 			{
+				"object":               "music_provider",
 				"name":                 "library",
-				"display_name":         "Sonos Music Library",
-				"supported_types":      []string{"albums", "artists", "tracks", "genres"},
+				"display_name":         "Music Library",
+				"supported_types":      []string{"albums", "artists", "tracks", "playlists"},
+				"supports_suggestions": false,
+			},
+			{
+				"object":               "music_provider",
+				"name":                 "spotify",
+				"display_name":         "Spotify",
+				"supported_types":      []string{"albums", "artists", "tracks", "playlists", "genres", "audiobooks", "podcasts"},
 				"supports_suggestions": false,
 			},
 		}
 
-		// Small fixed list - no pagination needed
-		return api.ListResponse(w, r, http.StatusOK, "providers", providers, nil)
+		// Stripe-style list response (small fixed list - no pagination needed)
+		return api.WriteList(w, "/v1/music/providers", providers, false)
 	}
 }

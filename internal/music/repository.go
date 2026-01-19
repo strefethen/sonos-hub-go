@@ -531,6 +531,49 @@ func (r *SetItemRepository) GetByPosition(setID string, position int) (*SetItem,
 	return r.scanSetItem(row)
 }
 
+// RemoveByPosition removes an item from a music set by its position.
+// After removal, it reorders remaining items to maintain contiguous positions.
+func (r *SetItemRepository) RemoveByPosition(setID string, position int) error {
+	tx, err := r.writer.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Delete the item at the given position
+	result, err := tx.Exec(`
+		DELETE FROM set_items
+		WHERE set_id = ? AND position = ?
+	`, setID, position)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	// Reorder remaining items to close the gap
+	_, err = tx.Exec(`
+		UPDATE set_items
+		SET position = position - 1
+		WHERE set_id = ? AND position > ?
+	`, setID, position)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 func (r *SetItemRepository) scanSetItem(row *sql.Row) (*SetItem, error) {
 	var item SetItem
 	var addedAt string

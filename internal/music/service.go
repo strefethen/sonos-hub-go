@@ -205,6 +205,35 @@ func (s *Service) GetItems(setID string) ([]SetItem, error) {
 	return s.itemsRepo.GetItems(setID)
 }
 
+// RemoveItemByPosition removes an item from a music set by its position.
+func (s *Service) RemoveItemByPosition(setID string, position int) error {
+	// Verify set exists
+	existing, err := s.setsRepo.GetByID(setID)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return &SetNotFoundError{SetID: setID}
+	}
+
+	// Verify item exists at position
+	item, err := s.itemsRepo.GetByPosition(setID, position)
+	if err != nil {
+		return err
+	}
+	if item == nil {
+		return &PositionNotFoundError{SetID: setID, Position: position}
+	}
+
+	if err := s.itemsRepo.RemoveByPosition(setID, position); err != nil {
+		s.logger.Printf("Failed to remove item at position %d from set %s: %v", position, setID, err)
+		return err
+	}
+
+	s.logger.Printf("Removed item at position %d from set %s", position, setID)
+	return nil
+}
+
 // ListItems retrieves items in a music set with pagination.
 // Uses database-level pagination for efficiency.
 func (s *Service) ListItems(setID string, limit, offset int) ([]SetItem, int, error) {
