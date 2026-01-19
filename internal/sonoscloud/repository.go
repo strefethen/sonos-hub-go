@@ -1,12 +1,12 @@
 package sonoscloud
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 )
-
-const tokenKey = "sonos_cloud_token"
 
 // DBPair interface for dependency injection (matches db.DBPair).
 type DBPair interface {
@@ -26,52 +26,41 @@ func NewRepository(dbPair DBPair) *Repository {
 	return &Repository{reader: dbPair.Reader(), writer: dbPair.Writer()}
 }
 
-// Init creates the sonos_cloud_tokens table if it doesn't exist.
-func (r *Repository) Init() error {
-	_, err := r.writer.Exec(`
-		CREATE TABLE IF NOT EXISTS sonos_cloud_tokens (
-			key TEXT PRIMARY KEY,
-			access_token TEXT NOT NULL,
-			refresh_token TEXT NOT NULL,
-			expires_at TEXT NOT NULL,
-			token_type TEXT NOT NULL,
-			scope TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)
-	`)
-	return err
-}
-
 // GetToken retrieves the stored token.
-func (r *Repository) GetToken() (*TokenPair, error) {
-	row := r.reader.QueryRow(`
-		SELECT access_token, refresh_token, expires_at, token_type, scope, created_at
+// Compatible with Node.js schema which uses id=1 and expires_at as unix timestamp in SECONDS.
+func (r *Repository) GetToken(ctx context.Context) (*TokenPair, error) {
+	row := r.reader.QueryRowContext(ctx, `
+		SELECT access_token, refresh_token, expires_at, scope, household_id, created_at, updated_at
 		FROM sonos_cloud_tokens
-		WHERE key = ?
-	`, tokenKey)
+		WHERE id = 1
+	`)
 
 	var token TokenPair
-	var expiresAt, createdAt string
+	var expiresAtUnix int64
+	var householdID sql.NullString
+	var createdAt, updatedAt string
 
 	err := row.Scan(
 		&token.AccessToken,
 		&token.RefreshToken,
-		&expiresAt,
-		&token.TokenType,
+		&expiresAtUnix,
 		&token.Scope,
+		&householdID,
 		&createdAt,
+		&updatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("scan token: %w", err)
 	}
 
-	token.ExpiresAt, err = time.Parse(time.RFC3339, expiresAt)
-	if err != nil {
-		token.ExpiresAt, _ = time.Parse("2006-01-02 15:04:05", expiresAt)
+	// Node.js stores expires_at as unix timestamp in SECONDS (not milliseconds)
+	token.ExpiresAt = time.Unix(expiresAtUnix, 0)
+	token.TokenType = "Bearer" // Node.js doesn't store this, default to Bearer
+	if householdID.Valid {
+		token.HouseholdID = &householdID.String
 	}
 
 	token.CreatedAt, err = time.Parse(time.RFC3339, createdAt)
@@ -79,47 +68,55 @@ func (r *Repository) GetToken() (*TokenPair, error) {
 		token.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
 	}
 
+	token.UpdatedAt, err = time.Parse(time.RFC3339, updatedAt)
+	if err != nil {
+		token.UpdatedAt, _ = time.Parse("2006-01-02 15:04:05", updatedAt)
+	}
+
 	return &token, nil
 }
 
-// SaveToken stores or updates the token.
-func (r *Repository) SaveToken(token *TokenPair) error {
-	now := nowISO()
-	expiresAt := token.ExpiresAt.UTC().Format(time.RFC3339)
-	createdAt := token.CreatedAt.UTC().Format(time.RFC3339)
+// SaveToken stores or updates the token using UPSERT pattern.
+// Stores expires_at as Unix timestamp in SECONDS to match Node.js.
+func (r *Repository) SaveToken(ctx context.Context, token *TokenPair) error {
+	expiresAtUnix := token.ExpiresAt.Unix() // SECONDS, not milliseconds
 
-	_, err := r.writer.Exec(`
-		INSERT INTO sonos_cloud_tokens (key, access_token, refresh_token, expires_at, token_type, scope, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(key) DO UPDATE SET
+	_, err := r.writer.ExecContext(ctx, `
+		INSERT INTO sonos_cloud_tokens (id, access_token, refresh_token, expires_at, scope, household_id, updated_at)
+		VALUES (1, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(id) DO UPDATE SET
 			access_token = excluded.access_token,
 			refresh_token = excluded.refresh_token,
 			expires_at = excluded.expires_at,
-			token_type = excluded.token_type,
 			scope = excluded.scope,
-			updated_at = excluded.updated_at
-	`, tokenKey, token.AccessToken, token.RefreshToken, expiresAt, token.TokenType, token.Scope, createdAt, now)
-	return err
-}
+			household_id = COALESCE(excluded.household_id, sonos_cloud_tokens.household_id),
+			updated_at = CURRENT_TIMESTAMP
+	`, token.AccessToken, token.RefreshToken, expiresAtUnix, token.Scope, token.HouseholdID)
 
-// DeleteToken removes the stored token.
-func (r *Repository) DeleteToken() error {
-	result, err := r.writer.Exec("DELETE FROM sonos_cloud_tokens WHERE key = ?", tokenKey)
 	if err != nil {
-		return err
+		return fmt.Errorf("save token: %w", err)
 	}
-
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected == 0 {
-		return sql.ErrNoRows
-	}
-
 	return nil
 }
 
-func nowISO() string {
-	return time.Now().UTC().Format(time.RFC3339)
+// UpdateHouseholdID updates just the household_id field.
+func (r *Repository) UpdateHouseholdID(ctx context.Context, householdID string) error {
+	_, err := r.writer.ExecContext(ctx, `
+		UPDATE sonos_cloud_tokens
+		SET household_id = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = 1
+	`, householdID)
+	if err != nil {
+		return fmt.Errorf("update household_id: %w", err)
+	}
+	return nil
+}
+
+// DeleteToken removes the stored token.
+func (r *Repository) DeleteToken(ctx context.Context) error {
+	_, err := r.writer.ExecContext(ctx, `DELETE FROM sonos_cloud_tokens WHERE id = 1`)
+	if err != nil {
+		return fmt.Errorf("delete token: %w", err)
+	}
+	return nil
 }

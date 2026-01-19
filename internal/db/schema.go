@@ -217,4 +217,19 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
   ('tv_routing_enabled', 'true'),
   ('tv_default_fallback_device_id', ''),
   ('tv_default_policy', 'USE_FALLBACK');
+
+-- ==========================================================================
+-- SONOS CLOUD TOKENS (OAuth tokens for Sonos Cloud API)
+-- ==========================================================================
+
+CREATE TABLE IF NOT EXISTS sonos_cloud_tokens (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    access_token TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    scope TEXT NOT NULL,
+    household_id TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 `

@@ -17,7 +17,9 @@ type TokenPair struct {
 	ExpiresAt    time.Time `json:"expires_at"`
 	TokenType    string    `json:"token_type"`
 	Scope        string    `json:"scope"`
+	HouseholdID  *string   `json:"household_id,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at,omitempty"`
 }
 
 // IsExpired returns true if the token has expired
@@ -91,6 +93,7 @@ type AudioClipRequest struct {
 
 // AudioClipResponse represents the response from playing an audio clip
 type AudioClipResponse struct {
+	Object   string `json:"object"`
 	ID       string `json:"id"`
 	Name     string `json:"name,omitempty"`
 	AppID    string `json:"appId"`
@@ -110,6 +113,7 @@ type tokenResponse struct {
 
 // AuthStartResponse is the response for starting OAuth flow
 type AuthStartResponse struct {
+	Object  string `json:"object"`
 	AuthURL string `json:"auth_url"`
 	State   string `json:"state"`
 }

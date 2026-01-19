@@ -35,7 +35,8 @@ func authStart(client *Client) func(w http.ResponseWriter, r *http.Request) erro
 			return apperrors.NewInternalError("Failed to generate auth URL")
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "auth", authResp)
+		authResp.Object = "sonos_cloud_auth"
+		return api.WriteResource(w, http.StatusOK, authResp)
 	}
 }
 
@@ -86,7 +87,8 @@ func authCallback(client *Client) func(w http.ResponseWriter, r *http.Request) e
 			return apperrors.NewInternalError("Failed to exchange authorization code")
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "connection", map[string]any{
+		return api.WriteResource(w, http.StatusOK, map[string]any{
+			"object":       "sonos_cloud_connection",
 			"connected":    true,
 			"expires_at":   token.ExpiresAt.UTC().Format(time.RFC3339),
 			"connected_at": token.CreatedAt.UTC().Format(time.RFC3339),
@@ -115,7 +117,8 @@ func authStatus(client *Client) func(w http.ResponseWriter, r *http.Request) err
 			data["scope"] = status.Scope
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "status", data)
+		data["object"] = "sonos_cloud_status"
+		return api.WriteResource(w, http.StatusOK, data)
 	}
 }
 
@@ -148,7 +151,8 @@ func authRefresh(client *Client) func(w http.ResponseWriter, r *http.Request) er
 			return apperrors.NewInternalError("Failed to refresh token")
 		}
 
-		return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+		return api.WriteAction(w, http.StatusOK, map[string]any{
+			"object":     "token_refresh",
 			"refreshed":  true,
 			"expires_at": token.ExpiresAt.UTC().Format(time.RFC3339),
 		})
@@ -163,7 +167,8 @@ func authDisconnect(client *Client) func(w http.ResponseWriter, r *http.Request)
 			return apperrors.NewInternalError("Failed to disconnect")
 		}
 
-		return api.ActionResponse(w, r, http.StatusOK, map[string]any{
+		return api.WriteAction(w, http.StatusOK, map[string]any{
+			"object":       "disconnect",
 			"disconnected": true,
 		})
 	}
@@ -176,7 +181,7 @@ func getHouseholds(client *Client) func(w http.ResponseWriter, r *http.Request) 
 			return handleAPIError(err)
 		}
 
-		return api.ListResponse(w, r, http.StatusOK, "households", households, nil)
+		return api.WriteList(w, "/v1/sonos-cloud/households", households, false)
 	}
 }
 
@@ -192,7 +197,8 @@ func getGroups(client *Client) func(w http.ResponseWriter, r *http.Request) erro
 			return handleAPIError(err)
 		}
 
-		return api.SingleResponse(w, r, http.StatusOK, "groups", map[string]any{
+		return api.WriteResource(w, http.StatusOK, map[string]any{
+			"object":  "groups",
 			"items":   groupsResp.Groups,
 			"players": groupsResp.Players,
 		})
@@ -211,7 +217,7 @@ func getPlayers(client *Client) func(w http.ResponseWriter, r *http.Request) err
 			return handleAPIError(err)
 		}
 
-		return api.ListResponse(w, r, http.StatusOK, "players", players, nil)
+		return api.WriteList(w, "/v1/sonos-cloud/players", players, false)
 	}
 }
 
@@ -236,7 +242,8 @@ func playAudioClip(client *Client) func(w http.ResponseWriter, r *http.Request) 
 			return handleAPIError(err)
 		}
 
-		return api.ActionResponse(w, r, http.StatusOK, clipResp)
+		clipResp.Object = "audio_clip"
+		return api.WriteAction(w, http.StatusOK, clipResp)
 	}
 }
 

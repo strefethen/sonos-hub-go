@@ -2,6 +2,7 @@ package sonoscloud
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -186,7 +187,7 @@ func (c *Client) ExchangeCode(code, state string) (*TokenPair, error) {
 		return nil, err
 	}
 
-	if err := c.repo.SaveToken(token); err != nil {
+	if err := c.repo.SaveToken(context.Background(), token); err != nil {
 		return nil, fmt.Errorf("save token: %w", err)
 	}
 
@@ -195,7 +196,7 @@ func (c *Client) ExchangeCode(code, state string) (*TokenPair, error) {
 
 // RefreshToken refreshes the access token using the refresh token.
 func (c *Client) RefreshToken() (*TokenPair, error) {
-	existing, err := c.repo.GetToken()
+	existing, err := c.repo.GetToken(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("get token: %w", err)
 	}
@@ -215,7 +216,7 @@ func (c *Client) RefreshToken() (*TokenPair, error) {
 	// Preserve the original created_at
 	token.CreatedAt = existing.CreatedAt
 
-	if err := c.repo.SaveToken(token); err != nil {
+	if err := c.repo.SaveToken(context.Background(), token); err != nil {
 		return nil, fmt.Errorf("save token: %w", err)
 	}
 
@@ -224,7 +225,7 @@ func (c *Client) RefreshToken() (*TokenPair, error) {
 
 // GetStatus returns the current connection status.
 func (c *Client) GetStatus() (*ConnectionStatus, error) {
-	token, err := c.repo.GetToken()
+	token, err := c.repo.GetToken(context.Background())
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +246,7 @@ func (c *Client) GetStatus() (*ConnectionStatus, error) {
 
 // Disconnect removes the stored tokens.
 func (c *Client) Disconnect() error {
-	return c.repo.DeleteToken()
+	return c.repo.DeleteToken(context.Background())
 }
 
 // GetValidToken returns a valid access token, refreshing if necessary.
@@ -253,7 +254,7 @@ func (c *Client) GetValidToken() (*TokenPair, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	token, err := c.repo.GetToken()
+	token, err := c.repo.GetToken(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("get token: %w", err)
 	}
@@ -289,7 +290,7 @@ func (c *Client) refreshTokenLocked(existing *TokenPair) (*TokenPair, error) {
 
 	token.CreatedAt = existing.CreatedAt
 
-	if err := c.repo.SaveToken(token); err != nil {
+	if err := c.repo.SaveToken(context.Background(), token); err != nil {
 		return nil, fmt.Errorf("save token: %w", err)
 	}
 
