@@ -1,6 +1,7 @@
 package devices
 
 import (
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -278,7 +279,23 @@ func identifyHomeTheaterGroup(members []ZoneMember, devicesByUDN map[string]Phys
 }
 
 func identifyStereoPair(members []ZoneMember, coordinatorUDN string, devicesByUDN map[string]PhysicalDevice) *StereoPair {
+	log.Printf("[STEREO-DIAG] Checking zone: %d members, coordinatorUDN=%s", len(members), coordinatorUDN)
+
+	// Log all members and their channel maps
+	for i, member := range members {
+		log.Printf("[STEREO-DIAG]   member[%d]: UDN=%s, ZoneName=%s, ChannelMapSet=%q",
+			i, member.UDN, member.ZoneName, member.ChannelMapSet)
+	}
+
+	// Log devicesByUDN keys for comparison
+	var keys []string
+	for k := range devicesByUDN {
+		keys = append(keys, k)
+	}
+	log.Printf("[STEREO-DIAG]   devicesByUDN keys: %v", keys)
+
 	if len(members) != 2 {
+		log.Printf("[STEREO-DIAG]   FAIL: len(members)=%d, expected 2", len(members))
 		return nil
 	}
 
@@ -293,7 +310,10 @@ func identifyStereoPair(members []ZoneMember, coordinatorUDN string, devicesByUD
 		}
 	}
 
+	log.Printf("[STEREO-DIAG]   hasStereoPattern=%v, channelSets=%v", hasStereoPattern, channelSets)
+
 	if !hasStereoPattern {
+		log.Printf("[STEREO-DIAG]   FAIL: no stereo pattern (LF,LF or RF,RF) found in ChannelMapSet")
 		return nil
 	}
 
@@ -317,13 +337,35 @@ func identifyStereoPair(members []ZoneMember, coordinatorUDN string, devicesByUD
 		}
 	}
 
+	log.Printf("[STEREO-DIAG]   Parsed: leftUDN=%s, rightUDN=%s", leftUDN, rightUDN)
+
 	if leftUDN == "" || rightUDN == "" {
+		log.Printf("[STEREO-DIAG]   FAIL: could not parse left/right UDNs from ChannelMapSet")
 		return nil
 	}
 
 	left, okLeft := devicesByUDN[leftUDN]
 	right, okRight := devicesByUDN[rightUDN]
+
+	log.Printf("[STEREO-DIAG]   Direct lookup: leftFound=%v, rightFound=%v", okLeft, okRight)
+
+	// If direct lookup failed, try with normalized UDNs (strip uuid: prefix if present)
 	if !okLeft || !okRight {
+		normalizedLeft := strings.TrimPrefix(leftUDN, "uuid:")
+		normalizedRight := strings.TrimPrefix(rightUDN, "uuid:")
+		log.Printf("[STEREO-DIAG]   Trying normalized: leftUDN=%s, rightUDN=%s", normalizedLeft, normalizedRight)
+
+		if !okLeft {
+			left, okLeft = devicesByUDN[normalizedLeft]
+		}
+		if !okRight {
+			right, okRight = devicesByUDN[normalizedRight]
+		}
+		log.Printf("[STEREO-DIAG]   After normalization: leftFound=%v, rightFound=%v", okLeft, okRight)
+	}
+
+	if !okLeft || !okRight {
+		log.Printf("[STEREO-DIAG]   FAIL: devices not found in devicesByUDN map")
 		return nil
 	}
 
@@ -335,6 +377,9 @@ func identifyStereoPair(members []ZoneMember, coordinatorUDN string, devicesByUD
 
 	namespace := uuid.MustParse(sonosNamespace)
 	pairID := uuid.NewSHA1(namespace, []byte("pair-"+left.UDN)).String()
+
+	log.Printf("[STEREO-DIAG]   SUCCESS: Stereo pair identified - Room=%s, Coordinator=%s",
+		cleanRoomName(left.RoomName), coordinator.RoomName)
 
 	return &StereoPair{
 		PairID:      pairID,

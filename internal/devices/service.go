@@ -324,14 +324,34 @@ func (service *Service) runDiscovery() discoveryResult {
 }
 
 func (service *Service) fetchZoneGroupTopology(ip string) *ZoneGroupTopology {
+	service.logger.Printf("[TOPOLOGY-DIAG] Fetching zone group topology from IP=%s, timeout=%dms", ip, service.cfg.SonosTimeoutMs)
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(service.cfg.SonosTimeoutMs)*time.Millisecond)
 	defer cancel()
 
 	state, err := service.soapClient.GetZoneGroupState(ctx, ip)
 	if err != nil {
+		service.logger.Printf("[TOPOLOGY-DIAG] FAIL: GetZoneGroupState error: %v", err)
 		return nil
 	}
-	return convertZoneGroupState(state)
+
+	service.logger.Printf("[TOPOLOGY-DIAG] Got zone state, %d groups", len(state.Groups))
+	for i, group := range state.Groups {
+		service.logger.Printf("[TOPOLOGY-DIAG]   Group[%d]: CoordinatorUDN=%s, %d members",
+			i, group.Coordinator, len(group.Members))
+		for j, member := range group.Members {
+			service.logger.Printf("[TOPOLOGY-DIAG]     Member[%d]: UUID=%s, ZoneName=%s, ChannelMapSet=%q, Satellite=%v, SW=%v",
+				j, member.UUID, member.ZoneName, member.ChannelMapSet, member.IsSatellite, member.IsSubwoofer)
+		}
+	}
+
+	topology := convertZoneGroupState(state)
+	if topology == nil {
+		service.logger.Printf("[TOPOLOGY-DIAG] FAIL: convertZoneGroupState returned nil")
+		return nil
+	}
+	service.logger.Printf("[TOPOLOGY-DIAG] Converted topology: %d groups", len(topology.Groups))
+	return topology
 }
 
 func (service *Service) loadKnownIPs() []string {
