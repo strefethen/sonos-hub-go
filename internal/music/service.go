@@ -527,8 +527,11 @@ func (s *Service) GetSetEnrichment(setID string) (*MusicSetEnrichment, error) {
 		enrichment.ServiceLogoURL = firstItem.ServiceLogoURL
 		enrichment.ServiceName = firstItem.ServiceName
 
-		// Try to get artwork_url from content_json
-		if firstItem.ContentJSON != nil && *firstItem.ContentJSON != "" {
+		// Get artwork_url directly from item (preferred - stored at item level)
+		if firstItem.ArtworkURL != nil && *firstItem.ArtworkURL != "" {
+			enrichment.ArtworkURL = firstItem.ArtworkURL
+		} else if firstItem.ContentJSON != nil && *firstItem.ContentJSON != "" {
+			// Fallback: try to get artwork_url from content_json for legacy items
 			var metadata ContentMetadata
 			if err := json.Unmarshal([]byte(*firstItem.ContentJSON), &metadata); err == nil {
 				if metadata.ArtworkURL != "" {

@@ -4,15 +4,26 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/strefethen/sonos-hub-go/internal/api"
 	"github.com/strefethen/sonos-hub-go/internal/apperrors"
+	"github.com/strefethen/sonos-hub-go/internal/devices"
+	"github.com/strefethen/sonos-hub-go/internal/sonos/soap"
+	"github.com/strefethen/sonos-hub-go/internal/spotifysearch"
 )
 
 // RegisterRoutes wires music catalog routes to the router.
-func RegisterRoutes(router chi.Router, service *Service) {
+// spotifyManager is optional - if nil, Spotify search will return 503.
+// soapClient and deviceService are optional - if nil, library search will return empty results.
+func RegisterRoutes(router chi.Router, service *Service, spotifyManager *spotifysearch.ConnectionManager, soapClient *soap.Client, deviceService *devices.Service) {
+	// Create library provider if dependencies are available
+	var libraryProvider *LibraryProvider
+	if soapClient != nil && deviceService != nil {
+		libraryProvider = NewLibraryProvider(soapClient, deviceService)
+	}
 	// Set CRUD
 	router.Method(http.MethodPost, "/v1/music/sets", api.Handler(createSet(service)))
 	router.Method(http.MethodGet, "/v1/music/sets", api.Handler(listSets(service)))
@@ -36,12 +47,12 @@ func RegisterRoutes(router chi.Router, service *Service) {
 	// Play music set on device
 	router.Method(http.MethodPost, "/v1/music/sets/{set_id}/play", api.Handler(playSet(service)))
 
-	// Search and suggestions (placeholders)
-	router.Method(http.MethodGet, "/v1/music/search", api.Handler(searchMusic(service)))
+	// Search and suggestions
+	router.Method(http.MethodGet, "/v1/music/search", api.Handler(searchMusic(spotifyManager, libraryProvider)))
 	router.Method(http.MethodGet, "/v1/music/suggestions", api.Handler(getMusicSuggestions(service)))
 
 	// Providers
-	router.Method(http.MethodGet, "/v1/music/providers", api.Handler(listProviders(service)))
+	router.Method(http.MethodGet, "/v1/music/providers", api.Handler(listProviders(service, spotifyManager)))
 }
 
 // createSet handles POST /v1/music/sets
@@ -80,10 +91,15 @@ func createSet(service *Service) func(w http.ResponseWriter, r *http.Request) er
 			"name":             set.Name,
 			"selection_policy": set.SelectionPolicy,
 			"current_index":    set.CurrentIndex,
-			"occasion_start":   set.OccasionStart,
-			"occasion_end":     set.OccasionEnd,
 			"created_at":       api.RFC3339Millis(set.CreatedAt),
 			"updated_at":       api.RFC3339Millis(set.UpdatedAt),
+		}
+		// Only include occasion fields when they have actual values
+		if set.OccasionStart != nil && *set.OccasionStart != "" {
+			setResponse["occasion_start"] = *set.OccasionStart
+		}
+		if set.OccasionEnd != nil && *set.OccasionEnd != "" {
+			setResponse["occasion_end"] = *set.OccasionEnd
 		}
 		return api.WriteResource(w, http.StatusCreated, setResponse)
 	}
@@ -208,7 +224,12 @@ func getSet(service *Service) func(w http.ResponseWriter, r *http.Request) error
 			if item.ServiceName != nil {
 				formattedItem["service_name"] = *item.ServiceName
 			}
-			// TODO: display_name and artwork_url would come from favorites lookup
+			if item.ArtworkURL != nil {
+				formattedItem["artwork_url"] = *item.ArtworkURL
+			}
+			if item.DisplayName != nil {
+				formattedItem["display_name"] = *item.DisplayName
+			}
 
 			formattedItems = append(formattedItems, formattedItem)
 		}
@@ -220,11 +241,16 @@ func getSet(service *Service) func(w http.ResponseWriter, r *http.Request) error
 			"name":             set.Name,
 			"selection_policy": set.SelectionPolicy,
 			"current_index":    set.CurrentIndex,
-			"occasion_start":   set.OccasionStart,
-			"occasion_end":     set.OccasionEnd,
 			"created_at":       api.RFC3339Millis(set.CreatedAt),
 			"updated_at":       api.RFC3339Millis(set.UpdatedAt),
 			"items":            formattedItems,
+		}
+		// Only include occasion fields when they have actual values
+		if set.OccasionStart != nil && *set.OccasionStart != "" {
+			setResponse["occasion_start"] = *set.OccasionStart
+		}
+		if set.OccasionEnd != nil && *set.OccasionEnd != "" {
+			setResponse["occasion_end"] = *set.OccasionEnd
 		}
 
 		// Return null instead of empty array for service_logo_urls/service_names
@@ -278,10 +304,15 @@ func updateSet(service *Service) func(w http.ResponseWriter, r *http.Request) er
 			"name":             set.Name,
 			"selection_policy": set.SelectionPolicy,
 			"current_index":    set.CurrentIndex,
-			"occasion_start":   set.OccasionStart,
-			"occasion_end":     set.OccasionEnd,
 			"created_at":       api.RFC3339Millis(set.CreatedAt),
 			"updated_at":       api.RFC3339Millis(set.UpdatedAt),
+		}
+		// Only include occasion fields when they have actual values
+		if set.OccasionStart != nil && *set.OccasionStart != "" {
+			setResponse["occasion_start"] = *set.OccasionStart
+		}
+		if set.OccasionEnd != nil && *set.OccasionEnd != "" {
+			setResponse["occasion_end"] = *set.OccasionEnd
 		}
 		return api.WriteResource(w, http.StatusOK, setResponse)
 	}
@@ -356,6 +387,12 @@ func addItem(service *Service) func(w http.ResponseWriter, r *http.Request) erro
 		}
 		if item.ServiceName != nil {
 			itemResponse["service_name"] = *item.ServiceName
+		}
+		if item.ArtworkURL != nil {
+			itemResponse["artwork_url"] = *item.ArtworkURL
+		}
+		if item.DisplayName != nil {
+			itemResponse["display_name"] = *item.DisplayName
 		}
 
 		return api.WriteResource(w, http.StatusCreated, itemResponse)
@@ -511,10 +548,19 @@ func formatSet(set *MusicSet) map[string]any {
 		"selection_policy": set.SelectionPolicy,
 		"current_index":    set.CurrentIndex,
 		"item_count":       set.ItemCount,
-		"occasion_start":   set.OccasionStart,
-		"occasion_end":     set.OccasionEnd,
 		"created_at":       api.RFC3339Millis(set.CreatedAt),
 		"updated_at":       api.RFC3339Millis(set.UpdatedAt),
+	}
+	// Only include occasion fields when they have actual values
+	// Empty strings should become null/omitted for iOS filtering
+	if set.OccasionStart != nil && *set.OccasionStart != "" {
+		result["occasion_start"] = *set.OccasionStart
+	}
+	if set.OccasionEnd != nil && *set.OccasionEnd != "" {
+		result["occasion_end"] = *set.OccasionEnd
+	}
+	if set.ArtworkURL != nil {
+		result["artwork_url"] = *set.ArtworkURL
 	}
 	return result
 }
@@ -536,6 +582,12 @@ func formatItem(item *SetItem) map[string]any {
 	}
 	if item.ServiceName != nil {
 		result["service_name"] = *item.ServiceName
+	}
+	if item.ArtworkURL != nil {
+		result["artwork_url"] = *item.ArtworkURL
+	}
+	if item.DisplayName != nil {
+		result["display_name"] = *item.DisplayName
 	}
 	if item.ContentJSON != nil {
 		result["content_json"] = *item.ContentJSON
@@ -681,6 +733,8 @@ func addContent(service *Service) func(w http.ResponseWriter, r *http.Request) e
 			SonosFavoriteID: sonosFavoriteID,
 			ServiceLogoURL:  input.ServiceLogoURL,
 			ServiceName:     input.ServiceName,
+			ArtworkURL:      input.ArtworkURL,      // CRITICAL: Pass artwork_url to storage
+			DisplayName:     input.DisplayName,     // CRITICAL: Pass display_name to storage
 			ContentType:     input.MusicContent.Type,
 			ContentJSON:     &contentJSONStr,
 		}
@@ -713,11 +767,11 @@ func addContent(service *Service) func(w http.ResponseWriter, r *http.Request) e
 		if item.ServiceName != nil {
 			itemResponse["service_name"] = *item.ServiceName
 		}
-		if input.DisplayName != nil {
-			itemResponse["display_name"] = *input.DisplayName
+		if item.ArtworkURL != nil {
+			itemResponse["artwork_url"] = *item.ArtworkURL
 		}
-		if input.ArtworkURL != nil {
-			itemResponse["artwork_url"] = *input.ArtworkURL
+		if item.DisplayName != nil {
+			itemResponse["display_name"] = *item.DisplayName
 		}
 
 		return api.WriteResource(w, http.StatusCreated, itemResponse)
@@ -773,10 +827,10 @@ func playSet(service *Service) func(w http.ResponseWriter, r *http.Request) erro
 			return apperrors.NewValidationError("invalid request body", nil)
 		}
 
-		// Accept either speaker_id (Node.js) or device_id (Go)
+		// Accept either speaker_id (Node.js) or udn (Go)
 		speakerID := input.SpeakerID
 		if speakerID == "" {
-			speakerID = input.DeviceID
+			speakerID = input.UDN
 		}
 		if speakerID == "" {
 			return apperrors.NewValidationError("speaker_id is required", nil)
@@ -840,18 +894,19 @@ func playSet(service *Service) func(w http.ResponseWriter, r *http.Request) erro
 }
 
 // ==========================================================================
-// Search Handler (Placeholder)
+// Search Handler
 // ==========================================================================
 
 // searchMusic handles GET /v1/music/search
 // Mirrors Node.js music-search.ts format
-func searchMusic(service *Service) func(w http.ResponseWriter, r *http.Request) error {
+func searchMusic(spotifyManager *spotifysearch.ConnectionManager, libraryProvider *LibraryProvider) func(w http.ResponseWriter, r *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		query := r.URL.Query().Get("query")
 		if query == "" {
 			query = r.URL.Query().Get("q") // Fallback for legacy parameter
 		}
 		provider := r.URL.Query().Get("provider")
+		typesParam := r.URL.Query().Get("types") // comma-separated content types
 
 		// Parse limit and offset
 		limit := 25
@@ -870,12 +925,229 @@ func searchMusic(service *Service) func(w http.ResponseWriter, r *http.Request) 
 		// Validate provider
 		if provider == "" {
 			return apperrors.NewValidationError("provider is required", map[string]any{
-				"supported_providers": []string{"apple_music", "library"},
+				"supported_providers": []string{"apple_music", "library", "spotify"},
 			})
 		}
 
-		// Apple Music search not yet implemented - return proper format with empty results
-		// This matches Node.js music-search.ts response format, with Stripe-style envelope
+		// Handle Spotify search via WebSocket extension
+		if provider == "spotify" {
+			if spotifyManager == nil || !spotifyManager.IsConnected() {
+				return apperrors.NewAppError("SERVICE_UNAVAILABLE", "Spotify search extension not connected", 503, nil, nil)
+			}
+
+			if query == "" {
+				return apperrors.NewValidationError("query is required for spotify search", nil)
+			}
+
+			// Parse content types from request
+			contentTypes := spotifysearch.AllContentTypes()
+			if typesParam != "" {
+				contentTypes = nil
+				for _, t := range strings.Split(typesParam, ",") {
+					t = strings.TrimSpace(t)
+					contentTypes = append(contentTypes, spotifysearch.SpotifyContentType(t))
+				}
+			}
+
+			// Perform search via extension
+			results, err := spotifyManager.Search(r.Context(), query, contentTypes)
+			if err != nil {
+				if err == spotifysearch.ErrExtensionNotConnected {
+					return apperrors.NewAppError("SERVICE_UNAVAILABLE", "Spotify search extension not connected", 503, nil, nil)
+				}
+				if err == spotifysearch.ErrSearchTimeout {
+					return apperrors.NewAppError("SEARCH_TIMEOUT", "Spotify search timed out", 504, nil, nil)
+				}
+				return apperrors.NewInternalError("Spotify search failed")
+			}
+
+			// Convert to API response format (snake_case)
+			resultsMap := make(map[string]any)
+			if results.Tracks != nil && len(results.Tracks) > 0 {
+				tracks := make([]map[string]any, len(results.Tracks))
+				for i, t := range results.Tracks {
+					tracks[i] = map[string]any{
+						"id":           t.ID,
+						"name":         t.Name,
+						"playback_uri": t.URI,
+						"artwork_url":  t.ImageURL,
+						"artist_name":  t.ArtistName,
+						"album_name":   t.AlbumName,
+						"duration_ms":  t.DurationMs,
+						"content_type": "tracks",
+						"provider":     "spotify",
+					}
+				}
+				resultsMap["tracks"] = tracks
+			}
+			if results.Albums != nil && len(results.Albums) > 0 {
+				albums := make([]map[string]any, len(results.Albums))
+				for i, a := range results.Albums {
+					albums[i] = map[string]any{
+						"id":           a.ID,
+						"name":         a.Name,
+						"playback_uri": a.URI,
+						"artwork_url":  a.ImageURL,
+						"artist_name":  a.ArtistName,
+						"content_type": "albums",
+						"provider":     "spotify",
+					}
+				}
+				resultsMap["albums"] = albums
+			}
+			if results.Artists != nil && len(results.Artists) > 0 {
+				artists := make([]map[string]any, len(results.Artists))
+				for i, a := range results.Artists {
+					artists[i] = map[string]any{
+						"id":           a.ID,
+						"name":         a.Name,
+						"playback_uri": a.URI,
+						"artwork_url":  a.ImageURL,
+						"content_type": "artists",
+						"provider":     "spotify",
+					}
+				}
+				resultsMap["artists"] = artists
+			}
+			if results.Playlists != nil && len(results.Playlists) > 0 {
+				playlists := make([]map[string]any, len(results.Playlists))
+				for i, p := range results.Playlists {
+					playlists[i] = map[string]any{
+						"id":           p.ID,
+						"name":         p.Name,
+						"playback_uri": p.URI,
+						"artwork_url":  p.ImageURL,
+						"owner_name":   p.OwnerName,
+						"description":  p.Description,
+						"content_type": "playlists",
+						"provider":     "spotify",
+					}
+				}
+				resultsMap["playlists"] = playlists
+			}
+			if results.Genres != nil && len(results.Genres) > 0 {
+				genres := make([]map[string]any, len(results.Genres))
+				for i, g := range results.Genres {
+					genres[i] = map[string]any{
+						"id":           g.ID,
+						"name":         g.Name,
+						"playback_uri": g.URI,
+						"artwork_url":  g.ImageURL,
+						"content_type": "genres",
+						"provider":     "spotify",
+					}
+				}
+				resultsMap["genres"] = genres
+			}
+			if results.Audiobooks != nil && len(results.Audiobooks) > 0 {
+				audiobooks := make([]map[string]any, len(results.Audiobooks))
+				for i, a := range results.Audiobooks {
+					audiobooks[i] = map[string]any{
+						"id":           a.ID,
+						"name":         a.Name,
+						"playback_uri": a.URI,
+						"artwork_url":  a.ImageURL,
+						"author_name":  a.AuthorName,
+						"content_type": "audiobooks",
+						"provider":     "spotify",
+					}
+				}
+				resultsMap["audiobooks"] = audiobooks
+			}
+			if results.Podcasts != nil && len(results.Podcasts) > 0 {
+				podcasts := make([]map[string]any, len(results.Podcasts))
+				for i, p := range results.Podcasts {
+					podcasts[i] = map[string]any{
+						"id":             p.ID,
+						"name":           p.Name,
+						"playback_uri":   p.URI,
+						"artwork_url":    p.ImageURL,
+						"publisher_name": p.PublisherName,
+						"content_type":   "podcasts",
+						"provider":       "spotify",
+					}
+				}
+				resultsMap["podcasts"] = podcasts
+			}
+
+			return api.WriteResource(w, http.StatusOK, map[string]any{
+				"object":   "music_search",
+				"provider": provider,
+				"query":    query,
+				"results":  resultsMap,
+				"pagination": map[string]any{
+					"limit":  limit,
+					"offset": offset,
+					"total":  0, // Extension doesn't provide total count
+				},
+			})
+		}
+
+		// Handle Library search via UPnP ContentDirectory
+		if provider == "library" {
+			if libraryProvider == nil {
+				// No library provider available - return empty results
+				return api.WriteResource(w, http.StatusOK, map[string]any{
+					"object":   "music_search",
+					"provider": provider,
+					"query":    query,
+					"results":  map[string][]any{},
+					"pagination": map[string]any{
+						"limit":  limit,
+						"offset": offset,
+						"total":  0,
+					},
+				})
+			}
+
+			// Parse content types from request
+			var types []string
+			if typesParam != "" {
+				for _, t := range strings.Split(typesParam, ",") {
+					types = append(types, strings.TrimSpace(t))
+				}
+			}
+
+			// Perform library search
+			result, err := libraryProvider.Search(r.Context(), query, types, limit, offset)
+			if err != nil {
+				return apperrors.NewInternalError("Library search failed")
+			}
+
+			// Convert LibraryItem results to API format
+			resultsMap := make(map[string]any)
+			for contentType, items := range result.Results {
+				apiItems := make([]map[string]any, len(items))
+				for i, item := range items {
+					apiItems[i] = map[string]any{
+						"id":           item.ID,
+						"name":         item.Name,
+						"content_type": item.ContentType,
+						"provider":     item.Provider,
+						"artist_name":  item.ArtistName,
+						"album_name":   item.AlbumName,
+						"artwork_url":  item.ArtworkURL,
+						"playback_uri": item.PlaybackURI,
+						"duration_ms":  item.DurationMs,
+					}
+				}
+				resultsMap[contentType] = apiItems
+			}
+
+			return api.WriteResource(w, http.StatusOK, map[string]any{
+				"object":   "music_search",
+				"provider": provider,
+				"query":    query,
+				"results":  resultsMap,
+				"pagination": map[string]any{
+					"limit":  result.Pagination.Limit,
+					"offset": result.Pagination.Offset,
+					"total":  result.Pagination.Total,
+				},
+			})
+		}
+
+		// Apple Music search not yet implemented - return empty results
 		return api.WriteResource(w, http.StatusOK, map[string]any{
 			"object":   "music_search",
 			"provider": provider,
@@ -941,7 +1213,7 @@ type MusicProvider struct {
 
 // listProviders handles GET /v1/music/providers
 // Mirrors Node.js music-search.ts providers format
-func listProviders(service *Service) func(w http.ResponseWriter, r *http.Request) error {
+func listProviders(service *Service, spotifyManager *spotifysearch.ConnectionManager) func(w http.ResponseWriter, r *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		// Return available search providers
 		// Matches Node.js music-search.ts /v1/music/providers response, with Stripe-style envelope
@@ -960,14 +1232,21 @@ func listProviders(service *Service) func(w http.ResponseWriter, r *http.Request
 				"supported_types":      []string{"albums", "artists", "tracks", "playlists"},
 				"supports_suggestions": false,
 			},
-			{
-				"object":               "music_provider",
-				"name":                 "spotify",
-				"display_name":         "Spotify",
-				"supported_types":      []string{"albums", "artists", "tracks", "playlists", "genres", "audiobooks", "podcasts"},
-				"supports_suggestions": false,
-			},
 		}
+
+		// Add Spotify provider with connection status
+		spotifyStatus := "disconnected"
+		if spotifyManager != nil && spotifyManager.IsConnected() {
+			spotifyStatus = "connected"
+		}
+		providers = append(providers, map[string]any{
+			"object":               "music_provider",
+			"name":                 "spotify",
+			"display_name":         "Spotify",
+			"supported_types":      []string{"albums", "artists", "tracks", "playlists", "genres", "audiobooks", "podcasts"},
+			"supports_suggestions": false,
+			"status":               spotifyStatus,
+		})
 
 		// Stripe-style list response (small fixed list - no pagination needed)
 		return api.WriteList(w, "/v1/music/providers", providers, false)

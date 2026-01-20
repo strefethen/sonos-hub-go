@@ -36,9 +36,9 @@ func (r *MusicSetRepository) Create(input CreateSetInput) (*MusicSet, error) {
 	now := nowISO()
 
 	_, err := r.writer.Exec(`
-		INSERT INTO music_sets (set_id, name, selection_policy, current_index, occasion_start, occasion_end, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, setID, input.Name, input.SelectionPolicy, 0, input.OccasionStart, input.OccasionEnd, now, now)
+		INSERT INTO music_sets (set_id, name, selection_policy, current_index, occasion_start, occasion_end, artwork_url, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, setID, input.Name, input.SelectionPolicy, 0, input.OccasionStart, input.OccasionEnd, nil, now, now)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func (r *MusicSetRepository) Create(input CreateSetInput) (*MusicSet, error) {
 // GetByID retrieves a music set by ID.
 func (r *MusicSetRepository) GetByID(setID string) (*MusicSet, error) {
 	row := r.reader.QueryRow(`
-		SELECT set_id, name, selection_policy, current_index, occasion_start, occasion_end, created_at, updated_at
+		SELECT set_id, name, selection_policy, current_index, occasion_start, occasion_end, artwork_url, created_at, updated_at
 		FROM music_sets
 		WHERE set_id = ?
 	`, setID)
@@ -66,7 +66,7 @@ func (r *MusicSetRepository) List(limit, offset int) ([]MusicSet, int, error) {
 	}
 
 	rows, err := r.reader.Query(`
-		SELECT set_id, name, selection_policy, current_index, occasion_start, occasion_end, created_at, updated_at
+		SELECT set_id, name, selection_policy, current_index, occasion_start, occasion_end, artwork_url, created_at, updated_at
 		FROM music_sets
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
@@ -236,7 +236,7 @@ func (r *MusicSetRepository) IncrementIndex(setID string) (int, error) {
 func (r *MusicSetRepository) scanMusicSet(row *sql.Row) (*MusicSet, error) {
 	var set MusicSet
 	var createdAt, updatedAt string
-	var occasionStart, occasionEnd sql.NullString
+	var occasionStart, occasionEnd, artworkURL sql.NullString
 
 	err := row.Scan(
 		&set.SetID,
@@ -245,6 +245,7 @@ func (r *MusicSetRepository) scanMusicSet(row *sql.Row) (*MusicSet, error) {
 		&set.CurrentIndex,
 		&occasionStart,
 		&occasionEnd,
+		&artworkURL,
 		&createdAt,
 		&updatedAt,
 	)
@@ -261,6 +262,9 @@ func (r *MusicSetRepository) scanMusicSet(row *sql.Row) (*MusicSet, error) {
 	if occasionEnd.Valid {
 		set.OccasionEnd = &occasionEnd.String
 	}
+	if artworkURL.Valid {
+		set.ArtworkURL = &artworkURL.String
+	}
 
 	return r.parseMusicSet(&set, createdAt, updatedAt)
 }
@@ -268,7 +272,7 @@ func (r *MusicSetRepository) scanMusicSet(row *sql.Row) (*MusicSet, error) {
 func (r *MusicSetRepository) scanMusicSetRows(rows *sql.Rows) (*MusicSet, error) {
 	var set MusicSet
 	var createdAt, updatedAt string
-	var occasionStart, occasionEnd sql.NullString
+	var occasionStart, occasionEnd, artworkURL sql.NullString
 
 	err := rows.Scan(
 		&set.SetID,
@@ -277,6 +281,7 @@ func (r *MusicSetRepository) scanMusicSetRows(rows *sql.Rows) (*MusicSet, error)
 		&set.CurrentIndex,
 		&occasionStart,
 		&occasionEnd,
+		&artworkURL,
 		&createdAt,
 		&updatedAt,
 	)
@@ -289,6 +294,9 @@ func (r *MusicSetRepository) scanMusicSetRows(rows *sql.Rows) (*MusicSet, error)
 	}
 	if occasionEnd.Valid {
 		set.OccasionEnd = &occasionEnd.String
+	}
+	if artworkURL.Valid {
+		set.ArtworkURL = &artworkURL.String
 	}
 
 	return r.parseMusicSet(&set, createdAt, updatedAt)
@@ -349,9 +357,9 @@ func (r *SetItemRepository) Add(setID string, input AddItemInput) (*SetItem, err
 	}
 
 	_, err = r.writer.Exec(`
-		INSERT INTO set_items (set_id, sonos_favorite_id, position, added_at, service_logo_url, service_name, content_type, content_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, setID, input.SonosFavoriteID, nextPosition, now, input.ServiceLogoURL, input.ServiceName, contentType, input.ContentJSON)
+		INSERT INTO set_items (set_id, sonos_favorite_id, position, added_at, service_logo_url, service_name, artwork_url, display_name, content_type, content_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, setID, input.SonosFavoriteID, nextPosition, now, input.ServiceLogoURL, input.ServiceName, input.ArtworkURL, input.DisplayName, contentType, input.ContentJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +391,7 @@ func (r *SetItemRepository) Remove(setID, sonosFavoriteID string) error {
 // GetItems retrieves all items in a music set ordered by position.
 func (r *SetItemRepository) GetItems(setID string) ([]SetItem, error) {
 	rows, err := r.reader.Query(`
-		SELECT set_id, sonos_favorite_id, position, added_at, service_logo_url, service_name, content_type, content_json
+		SELECT set_id, sonos_favorite_id, position, added_at, service_logo_url, service_name, artwork_url, display_name, content_type, content_json
 		FROM set_items
 		WHERE set_id = ?
 		ORDER BY position ASC
@@ -416,7 +424,7 @@ func (r *SetItemRepository) GetItems(setID string) ([]SetItem, error) {
 // GetItem retrieves a specific item from a music set.
 func (r *SetItemRepository) GetItem(setID, sonosFavoriteID string) (*SetItem, error) {
 	row := r.reader.QueryRow(`
-		SELECT set_id, sonos_favorite_id, position, added_at, service_logo_url, service_name, content_type, content_json
+		SELECT set_id, sonos_favorite_id, position, added_at, service_logo_url, service_name, artwork_url, display_name, content_type, content_json
 		FROM set_items
 		WHERE set_id = ? AND sonos_favorite_id = ?
 	`, setID, sonosFavoriteID)
@@ -489,7 +497,7 @@ func (r *SetItemRepository) GetItemsPaginated(setID string, limit, offset int) (
 
 	// Get paginated items
 	rows, err := r.reader.Query(`
-		SELECT set_id, sonos_favorite_id, position, added_at, service_logo_url, service_name, content_type, content_json
+		SELECT set_id, sonos_favorite_id, position, added_at, service_logo_url, service_name, artwork_url, display_name, content_type, content_json
 		FROM set_items
 		WHERE set_id = ?
 		ORDER BY position ASC
@@ -523,7 +531,7 @@ func (r *SetItemRepository) GetItemsPaginated(setID string, limit, offset int) (
 // GetByPosition retrieves an item by its position in the set.
 func (r *SetItemRepository) GetByPosition(setID string, position int) (*SetItem, error) {
 	row := r.reader.QueryRow(`
-		SELECT set_id, sonos_favorite_id, position, added_at, service_logo_url, service_name, content_type, content_json
+		SELECT set_id, sonos_favorite_id, position, added_at, service_logo_url, service_name, artwork_url, display_name, content_type, content_json
 		FROM set_items
 		WHERE set_id = ? AND position = ?
 	`, setID, position)
@@ -577,7 +585,7 @@ func (r *SetItemRepository) RemoveByPosition(setID string, position int) error {
 func (r *SetItemRepository) scanSetItem(row *sql.Row) (*SetItem, error) {
 	var item SetItem
 	var addedAt string
-	var serviceLogoURL, serviceName, contentJSON sql.NullString
+	var serviceLogoURL, serviceName, artworkURL, displayName, contentJSON sql.NullString
 
 	err := row.Scan(
 		&item.SetID,
@@ -586,6 +594,8 @@ func (r *SetItemRepository) scanSetItem(row *sql.Row) (*SetItem, error) {
 		&addedAt,
 		&serviceLogoURL,
 		&serviceName,
+		&artworkURL,
+		&displayName,
 		&item.ContentType,
 		&contentJSON,
 	)
@@ -596,13 +606,13 @@ func (r *SetItemRepository) scanSetItem(row *sql.Row) (*SetItem, error) {
 		return nil, err
 	}
 
-	return r.parseSetItem(&item, addedAt, serviceLogoURL, serviceName, contentJSON)
+	return r.parseSetItem(&item, addedAt, serviceLogoURL, serviceName, artworkURL, displayName, contentJSON)
 }
 
 func (r *SetItemRepository) scanSetItemRows(rows *sql.Rows) (*SetItem, error) {
 	var item SetItem
 	var addedAt string
-	var serviceLogoURL, serviceName, contentJSON sql.NullString
+	var serviceLogoURL, serviceName, artworkURL, displayName, contentJSON sql.NullString
 
 	err := rows.Scan(
 		&item.SetID,
@@ -611,6 +621,8 @@ func (r *SetItemRepository) scanSetItemRows(rows *sql.Rows) (*SetItem, error) {
 		&addedAt,
 		&serviceLogoURL,
 		&serviceName,
+		&artworkURL,
+		&displayName,
 		&item.ContentType,
 		&contentJSON,
 	)
@@ -618,10 +630,10 @@ func (r *SetItemRepository) scanSetItemRows(rows *sql.Rows) (*SetItem, error) {
 		return nil, err
 	}
 
-	return r.parseSetItem(&item, addedAt, serviceLogoURL, serviceName, contentJSON)
+	return r.parseSetItem(&item, addedAt, serviceLogoURL, serviceName, artworkURL, displayName, contentJSON)
 }
 
-func (r *SetItemRepository) parseSetItem(item *SetItem, addedAt string, serviceLogoURL, serviceName, contentJSON sql.NullString) (*SetItem, error) {
+func (r *SetItemRepository) parseSetItem(item *SetItem, addedAt string, serviceLogoURL, serviceName, artworkURL, displayName, contentJSON sql.NullString) (*SetItem, error) {
 	var err error
 	item.AddedAt, err = time.Parse(time.RFC3339, addedAt)
 	if err != nil {
@@ -633,6 +645,12 @@ func (r *SetItemRepository) parseSetItem(item *SetItem, addedAt string, serviceL
 	}
 	if serviceName.Valid {
 		item.ServiceName = &serviceName.String
+	}
+	if artworkURL.Valid {
+		item.ArtworkURL = &artworkURL.String
+	}
+	if displayName.Valid {
+		item.DisplayName = &displayName.String
 	}
 	if contentJSON.Valid {
 		item.ContentJSON = &contentJSON.String
