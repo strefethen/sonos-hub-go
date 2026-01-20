@@ -127,6 +127,13 @@ func (m *Manager) SubscribeDevice(ctx context.Context, deviceIP, deviceUDN strin
 			continue
 		}
 
+		// Calculate renewal time, ensuring it's at least 60 seconds from now
+		// to avoid immediate renewal loops from bad timeout values
+		renewIn := timeout - m.config.RenewalBuffer
+		if renewIn < 60 {
+			renewIn = 60
+		}
+
 		sub := &Subscription{
 			SID:         sid,
 			DeviceIP:    deviceIP,
@@ -135,7 +142,7 @@ func (m *Manager) SubscribeDevice(ctx context.Context, deviceIP, deviceUDN strin
 			CallbackURL: callbackURL,
 			Timeout:     timeout,
 			SubscribedAt: m.now(),
-			RenewAt:     m.now().Add(time.Duration(timeout-m.config.RenewalBuffer) * time.Second),
+			RenewAt:     m.now().Add(time.Duration(renewIn) * time.Second),
 		}
 
 		m.addSubscription(sub)
@@ -316,9 +323,15 @@ func (m *Manager) renewExpiring() {
 			continue
 		}
 
+		// Calculate renewal time with defensive minimum
+		renewIn := timeout - m.config.RenewalBuffer
+		if renewIn < 60 {
+			renewIn = 60
+		}
+
 		m.mu.Lock()
 		sub.Timeout = timeout
-		sub.RenewAt = m.now().Add(time.Duration(timeout-m.config.RenewalBuffer) * time.Second)
+		sub.RenewAt = m.now().Add(time.Duration(renewIn) * time.Second)
 		m.mu.Unlock()
 
 		log.Printf("UPNP: Renewed subscription %s (timeout: %ds)", sub.SID, timeout)

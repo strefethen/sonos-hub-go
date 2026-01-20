@@ -97,8 +97,11 @@ func (c *StateCache) UpdateTransport(deviceIP string, event *AVTransportEvent) {
 	}
 
 	now := time.Now()
+	hasTransportState := false // Track if we got meaningful transport state data
+
 	if event.TransportState != "" {
 		state.TransportState = event.TransportState
+		hasTransportState = true
 	}
 	if event.TransportStatus != "" {
 		state.TransportStatus = event.TransportStatus
@@ -123,7 +126,11 @@ func (c *StateCache) UpdateTransport(deviceIP string, event *AVTransportEvent) {
 	}
 
 	state.TransportUpdatedAt = now
-	state.UpdatedAt = now
+	// Only update main freshness timestamp if we got transport state.
+	// This prevents position-only updates from masking stale/empty transport state.
+	if hasTransportState {
+		state.UpdatedAt = now
+	}
 	state.Source = "upnp_event"
 }
 

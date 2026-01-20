@@ -198,7 +198,9 @@ func ParseSID(sidHeader string) string {
 func ParseTimeout(timeoutHeader string) int {
 	// Timeout format: Second-3600 or infinite
 	if timeoutHeader == "infinite" {
-		return 0 // Treat as never expires
+		// Return 24 hours for infinite subscriptions to avoid renewal buffer
+		// calculation going negative (0 - 60 = -60 seconds = immediate expiry loop)
+		return 86400
 	}
 
 	timeoutHeader = strings.TrimPrefix(timeoutHeader, "Second-")
