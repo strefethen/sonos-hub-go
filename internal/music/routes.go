@@ -10,6 +10,7 @@ import (
 
 	"github.com/strefethen/sonos-hub-go/internal/api"
 	"github.com/strefethen/sonos-hub-go/internal/apperrors"
+	"github.com/strefethen/sonos-hub-go/internal/applemusic"
 	"github.com/strefethen/sonos-hub-go/internal/devices"
 	"github.com/strefethen/sonos-hub-go/internal/sonos/soap"
 	"github.com/strefethen/sonos-hub-go/internal/spotifysearch"
@@ -17,8 +18,9 @@ import (
 
 // RegisterRoutes wires music catalog routes to the router.
 // spotifyManager is optional - if nil, Spotify search will return 503.
+// appleClient is optional - if nil, Apple Music search will return 503.
 // soapClient and deviceService are optional - if nil, library search will return empty results.
-func RegisterRoutes(router chi.Router, service *Service, spotifyManager *spotifysearch.ConnectionManager, soapClient *soap.Client, deviceService *devices.Service) {
+func RegisterRoutes(router chi.Router, service *Service, spotifyManager *spotifysearch.ConnectionManager, appleClient *applemusic.Client, soapClient *soap.Client, deviceService *devices.Service) {
 	// Create library provider if dependencies are available
 	var libraryProvider *LibraryProvider
 	if soapClient != nil && deviceService != nil {
@@ -48,11 +50,11 @@ func RegisterRoutes(router chi.Router, service *Service, spotifyManager *spotify
 	router.Method(http.MethodPost, "/v1/music/sets/{set_id}/play", api.Handler(playSet(service)))
 
 	// Search and suggestions
-	router.Method(http.MethodGet, "/v1/music/search", api.Handler(searchMusic(spotifyManager, libraryProvider)))
-	router.Method(http.MethodGet, "/v1/music/suggestions", api.Handler(getMusicSuggestions(service)))
+	router.Method(http.MethodGet, "/v1/music/search", api.Handler(searchMusic(spotifyManager, appleClient, libraryProvider)))
+	router.Method(http.MethodGet, "/v1/music/suggestions", api.Handler(getMusicSuggestions(appleClient)))
 
 	// Providers
-	router.Method(http.MethodGet, "/v1/music/providers", api.Handler(listProviders(service, spotifyManager)))
+	router.Method(http.MethodGet, "/v1/music/providers", api.Handler(listProviders(service, spotifyManager, appleClient)))
 }
 
 // createSet handles POST /v1/music/sets
@@ -200,10 +202,22 @@ func getSet(service *Service) func(w http.ResponseWriter, r *http.Request) error
 				}
 			}
 
-			// Build music_content from sonos_favorite_id
-			musicContent := map[string]any{
-				"type":        "sonos_favorite",
-				"favorite_id": item.SonosFavoriteID,
+			// Build music_content from stored content_json (preserves title, service, etc.)
+			var musicContent map[string]any
+			if item.ContentJSON != nil && *item.ContentJSON != "" {
+				if err := json.Unmarshal([]byte(*item.ContentJSON), &musicContent); err != nil {
+					// Fallback to sonos_favorite structure on parse error
+					musicContent = map[string]any{
+						"type":        "sonos_favorite",
+						"favorite_id": item.SonosFavoriteID,
+					}
+				}
+			} else {
+				// No content_json, build basic sonos_favorite
+				musicContent = map[string]any{
+					"type":        "sonos_favorite",
+					"favorite_id": item.SonosFavoriteID,
+				}
 			}
 
 			// Format item matching Node.js structure
@@ -227,8 +241,16 @@ func getSet(service *Service) func(w http.ResponseWriter, r *http.Request) error
 			if item.ArtworkURL != nil {
 				formattedItem["artwork_url"] = *item.ArtworkURL
 			}
+			// Populate display_name from item or extract from content_json
 			if item.DisplayName != nil {
 				formattedItem["display_name"] = *item.DisplayName
+			} else if musicContent != nil {
+				// Try to extract title/name from content_json as fallback
+				if title, ok := musicContent["title"].(string); ok && title != "" {
+					formattedItem["display_name"] = title
+				} else if name, ok := musicContent["name"].(string); ok && name != "" {
+					formattedItem["display_name"] = name
+				}
 			}
 
 			formattedItems = append(formattedItems, formattedItem)
@@ -679,6 +701,16 @@ func isPositionNotFoundError(err error) bool {
 	return ok
 }
 
+// getContentType extracts the actual content type from MusicContent.
+// For "direct" type content (Spotify, etc.), the actual content type (playlist, album, podcast, etc.)
+// is stored in ContentType field. For backwards compatibility, falls back to Type discriminator.
+func getContentType(mc MusicContent) string {
+	if mc.ContentType != nil && *mc.ContentType != "" {
+		return *mc.ContentType // Use actual content type (podcast, playlist, album, etc.)
+	}
+	return mc.Type // Fallback to discriminator for backwards compatibility
+}
+
 // ==========================================================================
 // Content Management Handlers (iOS app format)
 // ==========================================================================
@@ -735,7 +767,7 @@ func addContent(service *Service) func(w http.ResponseWriter, r *http.Request) e
 			ServiceName:     input.ServiceName,
 			ArtworkURL:      input.ArtworkURL,      // CRITICAL: Pass artwork_url to storage
 			DisplayName:     input.DisplayName,     // CRITICAL: Pass display_name to storage
-			ContentType:     input.MusicContent.Type,
+			ContentType:     getContentType(input.MusicContent),
 			ContentJSON:     &contentJSONStr,
 		}
 
@@ -899,7 +931,7 @@ func playSet(service *Service) func(w http.ResponseWriter, r *http.Request) erro
 
 // searchMusic handles GET /v1/music/search
 // Mirrors Node.js music-search.ts format
-func searchMusic(spotifyManager *spotifysearch.ConnectionManager, libraryProvider *LibraryProvider) func(w http.ResponseWriter, r *http.Request) error {
+func searchMusic(spotifyManager *spotifysearch.ConnectionManager, appleClient *applemusic.Client, libraryProvider *LibraryProvider) func(w http.ResponseWriter, r *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		query := r.URL.Query().Get("query")
 		if query == "" {
@@ -1147,34 +1179,106 @@ func searchMusic(spotifyManager *spotifysearch.ConnectionManager, libraryProvide
 			})
 		}
 
-		// Apple Music search not yet implemented - return empty results
-		return api.WriteResource(w, http.StatusOK, map[string]any{
-			"object":   "music_search",
-			"provider": provider,
-			"query":    query,
-			"results":  map[string][]any{}, // Empty results grouped by type
-			"pagination": map[string]any{
-				"limit":  limit,
-				"offset": offset,
-				"total":  0,
-			},
+		// Handle Apple Music search
+		if provider == "apple_music" {
+			if appleClient == nil {
+				return apperrors.NewAppError("SERVICE_UNAVAILABLE", "Apple Music not configured", 503, nil, nil)
+			}
+
+			// Apple Music API has a max limit of 25
+			appleLimit := limit
+			if appleLimit > 25 {
+				appleLimit = 25
+			}
+
+			// Perform Apple Music search
+			result, err := appleClient.Search(r.Context(), query, typesParam, appleLimit, offset)
+			if err != nil {
+				return apperrors.NewInternalError("Apple Music search failed: " + err.Error())
+			}
+
+			// Parse types parameter into array for response
+			var types []string
+			if typesParam != "" {
+				for _, t := range strings.Split(typesParam, ",") {
+					types = append(types, strings.TrimSpace(t))
+				}
+			} else {
+				types = []string{"songs", "albums", "artists", "playlists"}
+			}
+
+			// Convert results to API format (snake_case)
+			// iOS expects "type" field on each item (not "content_type")
+			resultsMap := make(map[string]any)
+			for contentType, items := range result.Results {
+				apiItems := make([]map[string]any, len(items))
+				for i, item := range items {
+					apiItem := map[string]any{
+						"id":   item.ID,
+						"name": item.Name,
+						"type": item.ContentType, // iOS expects "type" not "content_type"
+					}
+					if item.ArtistName != nil {
+						apiItem["artist_name"] = *item.ArtistName
+					}
+					if item.AlbumName != nil {
+						apiItem["album_name"] = *item.AlbumName
+					}
+					if item.ArtworkURL != nil {
+						apiItem["artwork_url"] = *item.ArtworkURL
+					}
+					if item.PlaybackURI != nil {
+						apiItem["playback_uri"] = *item.PlaybackURI
+					}
+					if item.DurationMs != nil {
+						apiItem["duration_ms"] = *item.DurationMs
+					}
+					if item.CuratorName != nil {
+						apiItem["curator_name"] = *item.CuratorName
+					}
+					apiItems[i] = apiItem
+				}
+				resultsMap[contentType] = apiItems
+			}
+
+			// iOS expects: query, types (array), results, totals (optional)
+			return api.WriteResource(w, http.StatusOK, map[string]any{
+				"query":   query,
+				"types":   types,
+				"results": resultsMap,
+			})
+		}
+
+		// Unknown provider
+		return apperrors.NewValidationError("unsupported provider", map[string]any{
+			"provider":            provider,
+			"supported_providers": []string{"apple_music", "library", "spotify"},
 		})
 	}
 }
 
 // ==========================================================================
-// Suggestions Handler (Placeholder)
+// Suggestions Handler
 // ==========================================================================
 
 // getMusicSuggestions handles GET /v1/music/suggestions
 // Mirrors Node.js music-search.ts suggestions format
-func getMusicSuggestions(service *Service) func(w http.ResponseWriter, r *http.Request) error {
+func getMusicSuggestions(appleClient *applemusic.Client) func(w http.ResponseWriter, r *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		query := r.URL.Query().Get("query")
 		if query == "" {
 			query = r.URL.Query().Get("q") // Fallback
 		}
 		provider := r.URL.Query().Get("provider")
+		typesParam := r.URL.Query().Get("types")
+
+		// Parse limit
+		limit := 10
+		if l := r.URL.Query().Get("limit"); l != "" {
+			if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 25 {
+				limit = parsed
+			}
+		}
 
 		// Validate provider - only apple_music supports suggestions
 		if provider == "" {
@@ -1187,14 +1291,49 @@ func getMusicSuggestions(service *Service) func(w http.ResponseWriter, r *http.R
 			})
 		}
 
-		// Apple Music suggestions not yet implemented - return proper format
-		// Matches Node.js music-search.ts suggestions response, with Stripe-style envelope
+		// Check if Apple Music is configured
+		if appleClient == nil {
+			return apperrors.NewAppError("SERVICE_UNAVAILABLE", "Apple Music not configured", 503, nil, nil)
+		}
+
+		// Get suggestions from Apple Music API
+		result, err := appleClient.GetSuggestions(r.Context(), query, typesParam, limit)
+		if err != nil {
+			return apperrors.NewInternalError("Apple Music suggestions failed: " + err.Error())
+		}
+
+		// Convert terms to API format
+		terms := make([]map[string]string, len(result.Terms))
+		for i, t := range result.Terms {
+			terms[i] = map[string]string{
+				"term":         t.Term,
+				"display_term": t.DisplayTerm,
+			}
+		}
+
+		// Convert top results to API format
+		topResults := make([]map[string]any, len(result.TopResults))
+		for i, tr := range result.TopResults {
+			topResult := map[string]any{
+				"id":           tr.ID,
+				"name":         tr.Name,
+				"content_type": tr.ContentType,
+			}
+			if tr.ArtistName != nil {
+				topResult["artist_name"] = *tr.ArtistName
+			}
+			if tr.ArtworkURL != nil {
+				topResult["artwork_url"] = *tr.ArtworkURL
+			}
+			topResults[i] = topResult
+		}
+
 		return api.WriteResource(w, http.StatusOK, map[string]any{
 			"object":      "music_suggestions",
 			"provider":    provider,
 			"query":       query,
-			"terms":       []map[string]string{}, // Empty terms array
-			"top_results": []map[string]any{},    // Empty top results
+			"terms":       terms,
+			"top_results": topResults,
 		})
 	}
 }
@@ -1205,18 +1344,24 @@ func getMusicSuggestions(service *Service) func(w http.ResponseWriter, r *http.R
 
 // MusicProvider represents a music service provider.
 type MusicProvider struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Enabled     bool   `json:"enabled"`
-	RequiresAuth bool  `json:"requires_auth"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Enabled      bool   `json:"enabled"`
+	RequiresAuth bool   `json:"requires_auth"`
 }
 
 // listProviders handles GET /v1/music/providers
 // Mirrors Node.js music-search.ts providers format
-func listProviders(service *Service, spotifyManager *spotifysearch.ConnectionManager) func(w http.ResponseWriter, r *http.Request) error {
+func listProviders(service *Service, spotifyManager *spotifysearch.ConnectionManager, appleClient *applemusic.Client) func(w http.ResponseWriter, r *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		// Return available search providers
 		// Matches Node.js music-search.ts /v1/music/providers response, with Stripe-style envelope
+
+		// Apple Music provider with configuration status
+		appleStatus := "not_configured"
+		if appleClient != nil {
+			appleStatus = "configured"
+		}
 		providers := []map[string]any{
 			{
 				"object":               "music_provider",
@@ -1224,6 +1369,7 @@ func listProviders(service *Service, spotifyManager *spotifysearch.ConnectionMan
 				"display_name":         "Apple Music",
 				"supported_types":      []string{"albums", "artists", "tracks", "playlists", "stations"},
 				"supports_suggestions": true,
+				"status":               appleStatus,
 			},
 			{
 				"object":               "music_provider",

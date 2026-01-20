@@ -135,8 +135,10 @@ type MusicContent struct {
 	Type        string  `json:"type"`                   // "sonos_favorite", "apple_music", "direct"
 	FavoriteID  *string `json:"favorite_id,omitempty"`  // For sonos_favorite type
 	Service     *string `json:"service,omitempty"`      // "spotify", "apple_music"
-	ContentType *string `json:"content_type,omitempty"` // "playlist", "album", "track", "station"
+	ContentType *string `json:"content_type,omitempty"` // "playlist", "album", "track", "station", "podcast"
 	ContentID   *string `json:"content_id,omitempty"`   // Service-specific ID
+	Title       *string `json:"title,omitempty"`        // Display title for the content
+	ArtworkURL  *string `json:"artwork_url,omitempty"`  // Artwork URL for the content
 }
 
 // AddContentInput contains the input for adding content to a music set.
