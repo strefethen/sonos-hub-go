@@ -43,6 +43,14 @@ func GetPlaybackFromCache(svc *Service, coordinatorIP string) *HybridPlaybackInf
 		return nil
 	}
 
+	// Treat empty TransportState as cache miss - triggers SOAP fallback
+	// This fixes the issue where position-only events update UpdatedAt but not TransportState,
+	// making the cache appear fresh while actually having stale/empty transport state
+	if state.TransportState == "" {
+		log.Printf("HYBRID: Empty TransportState in cache for %s, falling back to SOAP", coordinatorIP)
+		return nil
+	}
+
 	// Convert cached state to GroupPlaybackInfo format
 	result := &HybridPlaybackInfo{
 		Source:   DataSourceCache,

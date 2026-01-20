@@ -176,29 +176,41 @@ func TestURIBuilder_BuildSpotifyURI(t *testing.T) {
 			name:        "spotify playlist",
 			contentType: "playlist",
 			contentID:   "37i9dQZF1DX5Ejj0EkURtP",
-			expectURI:   "x-rincon-cpcontainer:1006206c37i9dQZF1DX5Ejj0EkURtP?sid=12&flags=8300&sn=1",
+			// Format: x-rincon-cpcontainer:1006206cspotify%3Aplaylist%3A{id}?sid=12&flags=8300&sn={sn}
+			expectURI: "x-rincon-cpcontainer:1006206cspotify%3Aplaylist%3A37i9dQZF1DX5Ejj0EkURtP?sid=12&flags=8300&sn=1",
 		},
 		{
 			name:        "spotify album",
 			contentType: "album",
 			contentID:   "4aawyAB9vmqN3uQ7FjRGTy",
-			expectURI:   "x-rincon-cpcontainer:1004206c4aawyAB9vmqN3uQ7FjRGTy?sid=12&flags=8300&sn=1",
+			// Format: x-rincon-cpcontainer:1004006cspotify%3Aalbum%3A{id}?sid=12&flags=108&sn={sn}
+			// Note: prefix is 1004006c (not 1004206c), flags is 108 (not 8300)
+			expectURI: "x-rincon-cpcontainer:1004006cspotify%3Aalbum%3A4aawyAB9vmqN3uQ7FjRGTy?sid=12&flags=108&sn=1",
 		},
 		{
 			name:        "spotify track",
 			contentType: "track",
 			contentID:   "11dFghVXANMlKmJXsNCbNl",
-			expectURI:   "x-sonos-spotify:spotify:track:11dFghVXANMlKmJXsNCbNl?sid=12&flags=8224&sn=1",
+			// Format: x-sonos-http:00032020spotify%3Atrack%3A{id}?sid=12&flags=8224&sn={sn}
+			expectURI: "x-sonos-http:00032020spotify%3Atrack%3A11dFghVXANMlKmJXsNCbNl?sid=12&flags=8224&sn=1",
 		},
 		{
 			name:        "spotify station",
 			contentType: "station",
-			contentID:   "artist:1vCWHaC5f2uS3yhpwWbIA6",
-			expectURI:   "x-sonosapi-radio:spotify:station:artist:1vCWHaC5f2uS3yhpwWbIA6?sid=12&flags=8300&sn=1",
+			contentID:   "0VjIjW4GlUZAMYd2vXMwbJ",
+			// Format: x-sonosapi-radio:100c206cspotify%3AartistRadio%3A{id}?sid=12&flags=8300&sn={sn}
+			expectURI: "x-sonosapi-radio:100c206cspotify%3AartistRadio%3A0VjIjW4GlUZAMYd2vXMwbJ?sid=12&flags=8300&sn=1",
+		},
+		{
+			name:        "spotify podcast",
+			contentType: "podcast",
+			contentID:   "4rOoJ6Egrf8K2IrywzwOMk",
+			// Format: x-rincon-cpcontainer:1006206cspotify%3Ashow%3A{id}?sid=12&flags=8300&sn={sn}
+			expectURI: "x-rincon-cpcontainer:1006206cspotify%3Ashow%3A4rOoJ6Egrf8K2IrywzwOMk?sid=12&flags=8300&sn=1",
 		},
 		{
 			name:        "unsupported content type",
-			contentType: "podcast",
+			contentType: "unknown_type",
 			contentID:   "123",
 			expectError: true,
 		},
@@ -238,25 +250,30 @@ func TestURIBuilder_BuildAppleMusicURI(t *testing.T) {
 			name:        "apple music playlist",
 			contentType: "playlist",
 			contentID:   "pl.u-aZb0kMBIqqJv0L",
-			expectURI:   "x-rincon-cpcontainer:1006006cplaylist:pl.u-aZb0kMBIqqJv0L?sid=204",
+			// Format: x-rincon-cpcontainer:1006206cplaylist%3A{id}?sid=204&flags=8300&sn={sn}
+			expectURI: "x-rincon-cpcontainer:1006206cplaylist%3Apl.u-aZb0kMBIqqJv0L?sid=204&flags=8300&sn=1",
 		},
 		{
 			name:        "apple music album",
 			contentType: "album",
 			contentID:   "1234567890",
-			expectURI:   "x-rincon-cpcontainer:1004006calbum:1234567890?sid=204",
+			// Format: x-rincon-cpcontainer:1004206clibraryalbum%3Al.{id}?sid=204&flags=8300&sn={sn}
+			// Note: Apple Music albums use "libraryalbum:l." prefix
+			expectURI: "x-rincon-cpcontainer:1004206clibraryalbum%3Al.1234567890?sid=204&flags=8300&sn=1",
 		},
 		{
 			name:        "apple music track",
 			contentType: "track",
 			contentID:   "1234567890",
-			expectURI:   "x-sonos-http:song%3a1234567890.mp4?sid=204",
+			// Format: x-sonos-http:10032028song%3A{id}.mp4?sid=204&flags=8232&sn={sn}
+			expectURI: "x-sonos-http:10032028song%3A1234567890.mp4?sid=204&flags=8232&sn=1",
 		},
 		{
 			name:        "apple music station",
 			contentType: "station",
 			contentID:   "ra.u-abc123",
-			expectURI:   "x-sonosapi-radio:station:ra.u-abc123?sid=204",
+			// Format: x-sonosapi-radio:100c706cradio%3A{id}?sid=204&flags=28780&sn={sn}
+			expectURI: "x-sonosapi-radio:100c706cradio%3Ara.u-abc123?sid=204&flags=28780&sn=1",
 		},
 	}
 

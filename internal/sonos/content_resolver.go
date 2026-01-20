@@ -104,7 +104,7 @@ var serviceDisplayNames = map[string]string{
 }
 
 var serviceSupportedContentTypes = map[string][]string{
-	ServiceSpotify:     {"track", "album", "playlist", "artist"},
+	ServiceSpotify:     {"track", "album", "playlist", "artist", "podcast", "episode"},
 	ServiceAppleMusic:  {"track", "album", "playlist"},
 	ServiceAmazonMusic: {}, // Not supported for direct play
 }
@@ -417,39 +417,71 @@ func (b *URIBuilder) BuildMetadata(service, contentType, contentID, title string
 
 func (b *URIBuilder) buildSpotifyURI(contentType, contentID string, creds *ServiceCredentials) (string, error) {
 	// Spotify URIs use x-rincon-cpcontainer for containers (playlists, albums)
-	// and x-sonos-spotify for tracks
+	// and x-sonosapi-radio for stations
+	// Pattern matches Node.js implementation exactly
+	sn := creds.SN
+	if sn == "" {
+		sn = "1"
+	}
+
 	switch contentType {
 	case "playlist":
-		return fmt.Sprintf("x-rincon-cpcontainer:1006206c%s?sid=%s&flags=8300&sn=1",
-			contentID, creds.SID), nil
+		// Format: x-rincon-cpcontainer:1006206cspotify%3Aplaylist%3A{id}?sid=12&flags=8300&sn={sn}
+		return fmt.Sprintf("x-rincon-cpcontainer:1006206cspotify%%3Aplaylist%%3A%s?sid=%s&flags=8300&sn=%s",
+			contentID, creds.SID, sn), nil
 	case "album":
-		return fmt.Sprintf("x-rincon-cpcontainer:1004206c%s?sid=%s&flags=8300&sn=1",
-			contentID, creds.SID), nil
+		// Format: x-rincon-cpcontainer:1004006cspotify%3Aalbum%3A{id}?sid=12&flags=108&sn={sn}
+		// Note: prefix is 1004006c (not 1004206c), flags is 108 (not 8300)
+		return fmt.Sprintf("x-rincon-cpcontainer:1004006cspotify%%3Aalbum%%3A%s?sid=%s&flags=108&sn=%s",
+			contentID, creds.SID, sn), nil
 	case "track":
-		return fmt.Sprintf("x-sonos-spotify:spotify:track:%s?sid=%s&flags=8224&sn=1",
-			contentID, creds.SID), nil
+		// Format: x-sonos-http:00032020spotify%3Atrack%3A{id}?sid=12&flags=8224&sn={sn}
+		return fmt.Sprintf("x-sonos-http:00032020spotify%%3Atrack%%3A%s?sid=%s&flags=8224&sn=%s",
+			contentID, creds.SID, sn), nil
 	case "station", "radio":
-		return fmt.Sprintf("x-sonosapi-radio:spotify:station:%s?sid=%s&flags=8300&sn=1",
-			contentID, creds.SID), nil
+		// Format: x-sonosapi-radio:100c206cspotify%3AartistRadio%3A{id}?sid=12&flags=8300&sn={sn}
+		return fmt.Sprintf("x-sonosapi-radio:100c206cspotify%%3AartistRadio%%3A%s?sid=%s&flags=8300&sn=%s",
+			contentID, creds.SID, sn), nil
+	case "podcast":
+		// Podcasts (shows) use container format like playlists with spotify:show: prefix
+		// Format: x-rincon-cpcontainer:1006206cspotify%3Ashow%3A{id}?sid=12&flags=8300&sn={sn}
+		return fmt.Sprintf("x-rincon-cpcontainer:1006206cspotify%%3Ashow%%3A%s?sid=%s&flags=8300&sn=%s",
+			contentID, creds.SID, sn), nil
+	case "episode":
+		// Individual episodes use track-like format with spotify:episode: prefix
+		// Format: x-sonos-http:00032020spotify%3Aepisode%3A{id}?sid=12&flags=8224&sn={sn}
+		return fmt.Sprintf("x-sonos-http:00032020spotify%%3Aepisode%%3A%s?sid=%s&flags=8224&sn=%s",
+			contentID, creds.SID, sn), nil
 	default:
 		return "", fmt.Errorf("unsupported content type for Spotify: %s", contentType)
 	}
 }
 
 func (b *URIBuilder) buildAppleMusicURI(contentType, contentID string, creds *ServiceCredentials) (string, error) {
+	// Pattern matches Node.js implementation exactly
+	sn := creds.SN
+	if sn == "" {
+		sn = "1"
+	}
+
 	switch contentType {
 	case "playlist":
-		return fmt.Sprintf("x-rincon-cpcontainer:1006006cplaylist:%s?sid=%s",
-			contentID, creds.SID), nil
+		// Format: x-rincon-cpcontainer:1006206cplaylist%3A{id}?sid=204&flags=8300&sn={sn}
+		return fmt.Sprintf("x-rincon-cpcontainer:1006206cplaylist%%3A%s?sid=%s&flags=8300&sn=%s",
+			contentID, creds.SID, sn), nil
 	case "album":
-		return fmt.Sprintf("x-rincon-cpcontainer:1004006calbum:%s?sid=%s",
-			contentID, creds.SID), nil
+		// Format: x-rincon-cpcontainer:1004206clibraryalbum%3Al.{id}?sid=204&flags=8300&sn={sn}
+		// Note: Apple Music albums use "libraryalbum:l." prefix
+		return fmt.Sprintf("x-rincon-cpcontainer:1004206clibraryalbum%%3Al.%s?sid=%s&flags=8300&sn=%s",
+			contentID, creds.SID, sn), nil
 	case "track":
-		return fmt.Sprintf("x-sonos-http:song%%3a%s.mp4?sid=%s",
-			contentID, creds.SID), nil
+		// Format: x-sonos-http:10032028song%3A{id}.mp4?sid=204&flags=8232&sn={sn}
+		return fmt.Sprintf("x-sonos-http:10032028song%%3A%s.mp4?sid=%s&flags=8232&sn=%s",
+			contentID, creds.SID, sn), nil
 	case "station", "radio":
-		return fmt.Sprintf("x-sonosapi-radio:station:%s?sid=%s",
-			contentID, creds.SID), nil
+		// Format: x-sonosapi-radio:100c706cradio%3A{id}?sid=204&flags=28780&sn={sn}
+		return fmt.Sprintf("x-sonosapi-radio:100c706cradio%%3A%s?sid=%s&flags=28780&sn=%s",
+			contentID, creds.SID, sn), nil
 	default:
 		return "", fmt.Errorf("unsupported content type for Apple Music: %s", contentType)
 	}
@@ -459,48 +491,56 @@ func (b *URIBuilder) buildSpotifyMetadata(contentType, contentID, title string, 
 	var upnpClass string
 	var itemID string
 
+	// Item IDs must match the URI patterns exactly
 	switch contentType {
 	case "playlist":
 		upnpClass = "object.container.playlistContainer"
-		itemID = "1006206c" + contentID
+		itemID = "1006206cspotify%3Aplaylist%3A" + contentID
 	case "album":
 		upnpClass = "object.container.album.musicAlbum"
-		itemID = "1004206c" + contentID
+		itemID = "1004006cspotify%3Aalbum%3A" + contentID // 1004006c, not 1004206c
 	case "track":
 		upnpClass = "object.item.audioItem.musicTrack"
-		itemID = "00032020" + contentID
+		itemID = "00032020spotify%3Atrack%3A" + contentID
 	case "station", "radio":
 		upnpClass = "object.item.audioItem.audioBroadcast"
-		itemID = "100c206c" + contentID
+		itemID = "100c206cspotify%3AartistRadio%3A" + contentID
+	case "podcast":
+		upnpClass = "object.container.playlistContainer"
+		itemID = "1006206cspotify%3Ashow%3A" + contentID
+	case "episode":
+		upnpClass = "object.item.audioItem.musicTrack"
+		itemID = "00032020spotify%3Aepisode%3A" + contentID
 	default:
 		return "", fmt.Errorf("unsupported content type: %s", contentType)
 	}
 
-	return buildDidlMetadata(itemID, title, upnpClass, creds.AccountID), nil
+	return buildDidlMetadataWithToken(itemID, title, upnpClass, creds), nil
 }
 
 func (b *URIBuilder) buildAppleMusicMetadata(contentType, contentID, title string, creds *ServiceCredentials) (string, error) {
 	var upnpClass string
 	var itemID string
 
+	// Item IDs must match the URI patterns exactly
 	switch contentType {
 	case "playlist":
 		upnpClass = "object.container.playlistContainer"
-		itemID = "1006006cplaylist:" + contentID
+		itemID = "1006206cplaylist%3A" + contentID
 	case "album":
 		upnpClass = "object.container.album.musicAlbum"
-		itemID = "1004006calbum:" + contentID
+		itemID = "1004206clibraryalbum%3Al." + contentID
 	case "track":
 		upnpClass = "object.item.audioItem.musicTrack"
-		itemID = "10032020song:" + contentID
+		itemID = "10032028song%3A" + contentID + ".mp4"
 	case "station", "radio":
 		upnpClass = "object.item.audioItem.audioBroadcast"
-		itemID = "100c006cstation:" + contentID
+		itemID = "100c706cradio%3A" + contentID
 	default:
 		return "", fmt.Errorf("unsupported content type: %s", contentType)
 	}
 
-	return buildDidlMetadata(itemID, title, upnpClass, creds.AccountID), nil
+	return buildDidlMetadataWithToken(itemID, title, upnpClass, creds), nil
 }
 
 func buildDidlMetadata(itemID, title, upnpClass, accountID string) string {
@@ -509,6 +549,32 @@ func buildDidlMetadata(itemID, title, upnpClass, accountID string) string {
 	}
 	return fmt.Sprintf(`<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:r="urn:schemas-rinconnetworks-com:metadata-1-0/" xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"><item id="%s" parentID="0" restricted="true"><dc:title>%s</dc:title><upnp:class>%s</upnp:class><desc id="cdudn" nameSpace="urn:schemas-rinconnetworks-com:metadata-1-0/">%s</desc></item></DIDL-Lite>`,
 		itemID, title, upnpClass, accountID)
+}
+
+// buildDidlMetadataWithToken builds DIDL-Lite metadata with proper token descriptor
+// Format: SA_RINCON{token}_X_#Svc{token}-{sessionSuffix}-Token
+func buildDidlMetadataWithToken(itemID, title, upnpClass string, creds *ServiceCredentials) string {
+	if title == "" {
+		title = "Unknown"
+	}
+
+	// Build the desc value with credentials
+	// Format: SA_RINCON{token}_X_#Svc{token}-{sessionSuffix}-Token
+	var descValue string
+	if creds.Token != "" && creds.SessionSuffix != "" {
+		descValue = fmt.Sprintf("SA_RINCON%s_X_#Svc%s-%s-Token", creds.Token, creds.Token, creds.SessionSuffix)
+	} else if creds.Token != "" {
+		descValue = fmt.Sprintf("SA_RINCON%s_X_#Svc%s-0-Token", creds.Token, creds.Token)
+	} else if creds.AccountID != "" {
+		// Fallback to AccountID if token not available
+		descValue = creds.AccountID
+	} else {
+		// Last resort: use SID-based format
+		descValue = fmt.Sprintf("SA_RINCON%s_X_#Svc%s-0-Token", creds.SID, creds.SID)
+	}
+
+	return fmt.Sprintf(`<DIDL-Lite xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:r="urn:schemas-rinconnetworks-com:metadata-1-0/" xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/"><item id="%s" parentID="-1" restricted="true"><dc:title>%s</dc:title><upnp:class>%s</upnp:class><desc id="cdudn" nameSpace="urn:schemas-rinconnetworks-com:metadata-1-0/">%s</desc></item></DIDL-Lite>`,
+		itemID, title, upnpClass, descValue)
 }
 
 // DeviceResolver interface for device IP resolution
@@ -636,7 +702,8 @@ func (r *ContentResolver) ResolveDirectContent(ctx context.Context, service, con
 	}
 
 	// Determine if queue-based playback is needed
-	usesQueue := contentType == "playlist" || contentType == "album"
+	// Containers (playlists, albums, podcasts) require queue-based playback
+	usesQueue := contentType == "playlist" || contentType == "album" || contentType == "podcast"
 
 	displayTitle := title
 	if displayTitle == "" {
@@ -654,7 +721,7 @@ func (r *ContentResolver) ResolveDirectContent(ctx context.Context, service, con
 }
 
 // UsesQueuePlayback returns true if the content type requires queue-based playback
-// Containers (playlists, albums) use queue; tracks and stations use direct setAVTransportURI
+// Containers (playlists, albums, podcasts) use queue; tracks and stations use direct setAVTransportURI
 func (r *ContentResolver) UsesQueuePlayback(content MusicContent) bool {
 	if content.Type == "sonos_favorite" {
 		// For favorites, we can't determine this without fetching the favorite
@@ -663,8 +730,8 @@ func (r *ContentResolver) UsesQueuePlayback(content MusicContent) bool {
 	}
 	if content.ContentType != nil {
 		ct := *content.ContentType
-		// Playlists and albums use queue; tracks and stations use direct
-		return ct == "playlist" || ct == "album"
+		// Playlists, albums, and podcasts use queue; tracks and stations use direct
+		return ct == "playlist" || ct == "album" || ct == "podcast"
 	}
 	return false
 }

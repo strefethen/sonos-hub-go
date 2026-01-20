@@ -68,6 +68,20 @@ var musicServiceConfigs = map[string]MusicServiceConfig{
 				DefaultFlags: 8224,
 				UpnpClass:    "object.item.audioItem.musicTrack",
 			},
+			"podcast": {
+				URIScheme:    "x-rincon-cpcontainer",
+				ItemIDPrefix: "1006206c", // Same as playlist
+				IDPrefix:     "spotify:show:",
+				DefaultFlags: 8300,
+				UpnpClass:    "object.container.playlistContainer",
+			},
+			"episode": {
+				URIScheme:    "x-sonos-http",
+				ItemIDPrefix: "00032020", // Same as track
+				IDPrefix:     "spotify:episode:",
+				DefaultFlags: 8224,
+				UpnpClass:    "object.item.audioItem.musicTrack",
+			},
 		},
 	},
 	"apple_music": {

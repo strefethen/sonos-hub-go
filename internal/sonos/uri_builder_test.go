@@ -178,11 +178,13 @@ func TestGetSupportedContentTypes(t *testing.T) {
 
 	t.Run("spotify content types", func(t *testing.T) {
 		types := builder.GetSupportedContentTypes("spotify")
-		require.Len(t, types, 4)
+		require.Len(t, types, 6)
 		require.Contains(t, types, "playlist")
 		require.Contains(t, types, "album")
 		require.Contains(t, types, "station")
 		require.Contains(t, types, "track")
+		require.Contains(t, types, "podcast")
+		require.Contains(t, types, "episode")
 	})
 
 	t.Run("apple_music content types", func(t *testing.T) {
@@ -357,8 +359,26 @@ func TestBuildURI(t *testing.T) {
 		require.Contains(t, err.Error(), "unsupported service")
 	})
 
+	t.Run("spotify podcast", func(t *testing.T) {
+		uri, _, err := builder.BuildURI("spotify", "podcast", "2mTUnDkuKUkhiueKcVWoP0", "Up First from NPR", nil)
+		require.NoError(t, err)
+		require.True(t, strings.HasPrefix(uri, "x-rincon-cpcontainer:"))
+		require.Contains(t, uri, "1006206c")
+		require.Contains(t, uri, "spotify%3Ashow%3A")
+		require.Contains(t, uri, "flags=8300")
+	})
+
+	t.Run("spotify episode", func(t *testing.T) {
+		uri, _, err := builder.BuildURI("spotify", "episode", "4VptiCRV73h8c9cLLQmLhW", "Episode Title", nil)
+		require.NoError(t, err)
+		require.True(t, strings.HasPrefix(uri, "x-sonos-http:"))
+		require.Contains(t, uri, "00032020")
+		require.Contains(t, uri, "spotify%3Aepisode%3A")
+		require.Contains(t, uri, "flags=8224")
+	})
+
 	t.Run("unsupported content type returns error", func(t *testing.T) {
-		_, _, err := builder.BuildURI("spotify", "podcast", "123", "Test", nil)
+		_, _, err := builder.BuildURI("spotify", "audiobook", "123", "Test", nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unsupported content type")
 	})
@@ -400,6 +420,20 @@ func TestBuildDIDLMetadata(t *testing.T) {
 		metadata := builder.BuildDIDLMetadata("spotify", "station", "abc123", "Artist Radio", nil)
 		require.NotEmpty(t, metadata)
 		require.Contains(t, metadata, "<upnp:class>object.item.audioItem.audioBroadcast</upnp:class>")
+	})
+
+	t.Run("spotify podcast metadata", func(t *testing.T) {
+		metadata := builder.BuildDIDLMetadata("spotify", "podcast", "2mTUnDkuKUkhiueKcVWoP0", "Up First from NPR", nil)
+		require.NotEmpty(t, metadata)
+		require.Contains(t, metadata, "<upnp:class>object.container.playlistContainer</upnp:class>")
+		require.Contains(t, metadata, "1006206cspotify%3Ashow%3A")
+	})
+
+	t.Run("spotify episode metadata", func(t *testing.T) {
+		metadata := builder.BuildDIDLMetadata("spotify", "episode", "4VptiCRV73h8c9cLLQmLhW", "Episode Title", nil)
+		require.NotEmpty(t, metadata)
+		require.Contains(t, metadata, "<upnp:class>object.item.audioItem.musicTrack</upnp:class>")
+		require.Contains(t, metadata, "00032020spotify%3Aepisode%3A")
 	})
 
 	t.Run("metadata with credentials", func(t *testing.T) {

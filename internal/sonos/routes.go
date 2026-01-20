@@ -1183,6 +1183,11 @@ func buildNowPlayingGroup(result GroupPlaybackResult) map[string]any {
 	// The isTV field already indicates TV mode, so clients can use both fields
 	// to determine appropriate display (e.g., show playing animation for TV when state=PLAYING)
 	displayState := transportInfo.CurrentTransportState
+	if displayState == "" {
+		// Empty string is not a valid iOS PlaybackState enum value
+		// Default to STOPPED when transport state is unavailable
+		displayState = "STOPPED"
+	}
 
 	return map[string]any{
 		"coordinator_id": coord.UUID,
