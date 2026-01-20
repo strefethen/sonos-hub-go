@@ -78,8 +78,8 @@ const (
 
 // SceneMember represents a device that participates in a scene.
 type SceneMember struct {
-	DeviceID     string `json:"device_id"`
-	RoomName     string `json:"room_name,omitempty"`
+	UDN          string `json:"udn"`
+	RoomName     string `json:"room_name,omitempty"` // Stored for human-readable fallback
 	TargetVolume *int   `json:"target_volume,omitempty"`
 	Mute         *bool  `json:"mute,omitempty"`
 }
@@ -132,16 +132,16 @@ type Verification struct {
 
 // SceneExecution represents a single execution of a scene.
 type SceneExecution struct {
-	SceneExecutionID        string          `json:"scene_execution_id"`
-	SceneID                 string          `json:"scene_id"`
-	IdempotencyKey          *string         `json:"idempotency_key,omitempty"`
-	CoordinatorUsedDeviceID *string         `json:"coordinator_used_device_id,omitempty"`
-	Status                  ExecutionStatus `json:"status"`
-	StartedAt               time.Time       `json:"started_at"`
-	EndedAt                 *time.Time      `json:"ended_at,omitempty"`
-	Steps                   []ExecutionStep `json:"steps"`
-	Verification            *Verification   `json:"verification,omitempty"`
-	Error                   *string         `json:"error,omitempty"`
+	SceneExecutionID   string          `json:"scene_execution_id"`
+	SceneID            string          `json:"scene_id"`
+	IdempotencyKey     *string         `json:"idempotency_key,omitempty"`
+	CoordinatorUsedUDN *string         `json:"coordinator_used_udn,omitempty"`
+	Status             ExecutionStatus `json:"status"`
+	StartedAt          time.Time       `json:"started_at"`
+	EndedAt            *time.Time      `json:"ended_at,omitempty"`
+	Steps              []ExecutionStep `json:"steps"`
+	Verification       *Verification   `json:"verification,omitempty"`
+	Error              *string         `json:"error,omitempty"`
 }
 
 // MusicContent represents the content to play.
@@ -200,9 +200,9 @@ type StepUpdate struct {
 
 // DeviceResult represents the result of an operation on a single device.
 type DeviceResult struct {
-	DeviceID string `json:"device_id"`
-	Success  bool   `json:"success"`
-	Error    string `json:"error,omitempty"`
+	UDN     string `json:"udn"`
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
 }
 
 // DefaultExecutionSteps returns the initial steps for a new execution.

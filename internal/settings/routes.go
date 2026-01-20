@@ -15,12 +15,12 @@ import (
 
 // TVRoutingSettings holds TV routing configuration.
 type TVRoutingSettings struct {
-	ArcTVPolicy       string   `json:"arc_tv_policy"`
-	FallbackDeviceID  *string  `json:"fallback_device_id,omitempty"`
-	FallbackRooms     []string `json:"fallback_rooms,omitempty"`
-	AlwaysSkipOnTV    bool     `json:"always_skip_on_tv"`
-	RetryOnTVTimeout  int      `json:"retry_on_tv_timeout_seconds"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ArcTVPolicy      string    `json:"arc_tv_policy"`
+	FallbackUDN      *string   `json:"fallback_udn,omitempty"`
+	FallbackRooms    []string  `json:"fallback_rooms,omitempty"`
+	AlwaysSkipOnTV   bool      `json:"always_skip_on_tv"`
+	RetryOnTVTimeout int       `json:"retry_on_tv_timeout_seconds"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // DBPair interface for dependency injection (matches db.DBPair).
@@ -72,7 +72,7 @@ func getTVRoutingSettings(service *Service) func(w http.ResponseWriter, r *http.
 // UpdateTVRoutingInput represents the request body for updating TV routing settings.
 type UpdateTVRoutingInput struct {
 	ArcTVPolicy      *string  `json:"arc_tv_policy,omitempty"`
-	FallbackDeviceID *string  `json:"fallback_device_id,omitempty"`
+	FallbackUDN      *string  `json:"fallback_udn,omitempty"`
 	FallbackRooms    []string `json:"fallback_rooms,omitempty"`
 	AlwaysSkipOnTV   *bool    `json:"always_skip_on_tv,omitempty"`
 	RetryOnTVTimeout *int     `json:"retry_on_tv_timeout_seconds,omitempty"`
@@ -142,10 +142,10 @@ func (s *Service) GetTVRoutingSettings() (*TVRoutingSettings, error) {
 		return settings, nil
 	}
 
-	// Fall back to individual keys (legacy format)
+	// Fall back to individual keys
 	rows, err := s.reader.Query(`
 		SELECT key, value, updated_at FROM settings
-		WHERE key IN ('tv_routing_enabled', 'tv_default_fallback_device_id', 'tv_default_policy')
+		WHERE key IN ('tv_routing_enabled', 'tv_default_fallback_udn', 'tv_default_policy')
 	`)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -173,9 +173,9 @@ func (s *Service) GetTVRoutingSettings() (*TVRoutingSettings, error) {
 		switch key {
 		case "tv_default_policy":
 			settings.ArcTVPolicy = val
-		case "tv_default_fallback_device_id":
+		case "tv_default_fallback_udn":
 			if val != "" {
-				settings.FallbackDeviceID = &val
+				settings.FallbackUDN = &val
 			}
 		case "tv_routing_enabled":
 			settings.AlwaysSkipOnTV = val != "true"
@@ -201,8 +201,8 @@ func (s *Service) UpdateTVRoutingSettings(input UpdateTVRoutingInput) (*TVRoutin
 	if input.ArcTVPolicy != nil {
 		current.ArcTVPolicy = *input.ArcTVPolicy
 	}
-	if input.FallbackDeviceID != nil {
-		current.FallbackDeviceID = input.FallbackDeviceID
+	if input.FallbackUDN != nil {
+		current.FallbackUDN = input.FallbackUDN
 	}
 	if input.FallbackRooms != nil {
 		current.FallbackRooms = input.FallbackRooms
@@ -249,8 +249,8 @@ func formatTVRoutingSettings(settings *TVRoutingSettings) map[string]any {
 		"updated_at":                  settings.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 
-	if settings.FallbackDeviceID != nil {
-		result["fallback_device_id"] = *settings.FallbackDeviceID
+	if settings.FallbackUDN != nil {
+		result["fallback_udn"] = *settings.FallbackUDN
 	}
 
 	return result

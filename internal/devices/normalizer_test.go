@@ -12,21 +12,19 @@ func TestIdentifyStereoPair_CombinedChannelMapSet(t *testing.T) {
 	// Test case: Combined ChannelMapSet on one member (format: "RINCON_A:LF,LF;RINCON_B:RF,RF")
 	devicesByUDN := map[string]PhysicalDevice{
 		"RINCON_LeftSpeaker": {
-			DeviceID:  "left-device-id",
-			UDN:       "RINCON_LeftSpeaker",
-			IP:        "192.168.1.13",
-			Model:     "Play:1",
-			RoomName:  "Kitchen (L)",
-			Role:      DeviceRoleNormal,
+			UDN:        "RINCON_LeftSpeaker",
+			IP:         "192.168.1.13",
+			Model:      "Play:1",
+			RoomName:   "Kitchen (L)",
+			Role:       DeviceRoleNormal,
 			LastSeenAt: time.Now(),
 		},
 		"RINCON_RightSpeaker": {
-			DeviceID:  "right-device-id",
-			UDN:       "RINCON_RightSpeaker",
-			IP:        "192.168.1.12",
-			Model:     "Play:1",
-			RoomName:  "Kitchen (R)",
-			Role:      DeviceRoleNormal,
+			UDN:        "RINCON_RightSpeaker",
+			IP:         "192.168.1.12",
+			Model:      "Play:1",
+			RoomName:   "Kitchen (R)",
+			Role:       DeviceRoleNormal,
 			LastSeenAt: time.Now(),
 		},
 	}
@@ -59,21 +57,19 @@ func TestIdentifyStereoPair_SeparateChannelMapSet(t *testing.T) {
 	// Test case: Each member has their own ChannelMapSet
 	devicesByUDN := map[string]PhysicalDevice{
 		"RINCON_LeftSpeaker": {
-			DeviceID:  "left-device-id",
-			UDN:       "RINCON_LeftSpeaker",
-			IP:        "192.168.1.13",
-			Model:     "Play:1",
-			RoomName:  "Kitchen (L)",
-			Role:      DeviceRoleNormal,
+			UDN:        "RINCON_LeftSpeaker",
+			IP:         "192.168.1.13",
+			Model:      "Play:1",
+			RoomName:   "Kitchen (L)",
+			Role:       DeviceRoleNormal,
 			LastSeenAt: time.Now(),
 		},
 		"RINCON_RightSpeaker": {
-			DeviceID:  "right-device-id",
-			UDN:       "RINCON_RightSpeaker",
-			IP:        "192.168.1.12",
-			Model:     "Play:1",
-			RoomName:  "Kitchen (R)",
-			Role:      DeviceRoleNormal,
+			UDN:        "RINCON_RightSpeaker",
+			IP:         "192.168.1.12",
+			Model:      "Play:1",
+			RoomName:   "Kitchen (R)",
+			Role:       DeviceRoleNormal,
 			LastSeenAt: time.Now(),
 		},
 	}
@@ -105,7 +101,6 @@ func TestIdentifyStereoPair_NotEnoughMembers(t *testing.T) {
 	// Test case: Only one member - should not identify as stereo pair
 	devicesByUDN := map[string]PhysicalDevice{
 		"RINCON_Speaker": {
-			DeviceID: "device-id",
 			UDN:      "RINCON_Speaker",
 			IP:       "192.168.1.15",
 			Model:    "Playbase",
@@ -131,7 +126,6 @@ func TestIdentifyStereoPair_TooManyMembers(t *testing.T) {
 	// Test case: More than 2 members (like home theater group) - should not identify as stereo pair
 	devicesByUDN := map[string]PhysicalDevice{
 		"RINCON_Main": {
-			DeviceID: "main-id",
 			UDN:      "RINCON_Main",
 			IP:       "192.168.1.10",
 			Model:    "Arc",
@@ -139,7 +133,6 @@ func TestIdentifyStereoPair_TooManyMembers(t *testing.T) {
 			Role:     DeviceRoleNormal,
 		},
 		"RINCON_Left": {
-			DeviceID: "left-id",
 			UDN:      "RINCON_Left",
 			IP:       "192.168.1.17",
 			Model:    "Play:1",
@@ -147,7 +140,6 @@ func TestIdentifyStereoPair_TooManyMembers(t *testing.T) {
 			Role:     DeviceRoleSurround,
 		},
 		"RINCON_Right": {
-			DeviceID: "right-id",
 			UDN:      "RINCON_Right",
 			IP:       "192.168.1.29",
 			Model:    "Play:1",
@@ -155,7 +147,6 @@ func TestIdentifyStereoPair_TooManyMembers(t *testing.T) {
 			Role:     DeviceRoleSurround,
 		},
 		"RINCON_Sub": {
-			DeviceID: "sub-id",
 			UDN:      "RINCON_Sub",
 			IP:       "192.168.1.76",
 			Model:    "Sub Mini",
@@ -178,8 +169,8 @@ func TestIdentifyStereoPair_TooManyMembers(t *testing.T) {
 func TestIdentifyStereoPair_NoStereoPattern(t *testing.T) {
 	// Test case: Two members but no LF,LF or RF,RF patterns
 	devicesByUDN := map[string]PhysicalDevice{
-		"RINCON_A": {DeviceID: "a-id", UDN: "RINCON_A", RoomName: "Room"},
-		"RINCON_B": {DeviceID: "b-id", UDN: "RINCON_B", RoomName: "Room"},
+		"RINCON_A": {UDN: "RINCON_A", RoomName: "Room"},
+		"RINCON_B": {UDN: "RINCON_B", RoomName: "Room"},
 	}
 
 	members := []ZoneMember{
@@ -195,12 +186,10 @@ func TestIdentifyStereoPair_CoordinatorIsRight(t *testing.T) {
 	// Test case: Right speaker is the coordinator
 	devicesByUDN := map[string]PhysicalDevice{
 		"RINCON_LeftSpeaker": {
-			DeviceID: "left-device-id",
 			UDN:      "RINCON_LeftSpeaker",
 			RoomName: "Kitchen (L)",
 		},
 		"RINCON_RightSpeaker": {
-			DeviceID: "right-device-id",
 			UDN:      "RINCON_RightSpeaker",
 			RoomName: "Kitchen (R)",
 		},
@@ -255,19 +244,16 @@ func TestIdentifyStereoPairsByRoomName_Fallback(t *testing.T) {
 	// Test the fallback stereo pair detection by room name suffixes
 	physicalDevices := []PhysicalDevice{
 		{
-			DeviceID: "left-id",
 			UDN:      "RINCON_Left",
 			RoomName: "Kitchen (L)",
 			IP:       "192.168.1.13",
 		},
 		{
-			DeviceID: "right-id",
 			UDN:      "RINCON_Right",
 			RoomName: "Kitchen (R)",
 			IP:       "192.168.1.12",
 		},
 		{
-			DeviceID: "standalone-id",
 			UDN:      "RINCON_Standalone",
 			RoomName: "Living room",
 			IP:       "192.168.1.15",
@@ -287,12 +273,10 @@ func TestIdentifyStereoPairsByRoomName_AlreadyProcessed(t *testing.T) {
 	// Test that already processed devices are skipped
 	physicalDevices := []PhysicalDevice{
 		{
-			DeviceID: "left-id",
 			UDN:      "RINCON_Left",
 			RoomName: "Kitchen (L)",
 		},
 		{
-			DeviceID: "right-id",
 			UDN:      "RINCON_Right",
 			RoomName: "Kitchen (R)",
 		},

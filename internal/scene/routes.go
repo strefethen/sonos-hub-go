@@ -267,7 +267,7 @@ func formatScene(scene *Scene) map[string]any {
 	members := make([]map[string]any, 0, len(scene.Members))
 	for _, m := range scene.Members {
 		member := map[string]any{
-			"device_id": m.DeviceID,
+			"udn": m.UDN,
 		}
 		if m.RoomName != "" {
 			member["room_name"] = m.RoomName
@@ -365,8 +365,8 @@ func formatExecution(exec *SceneExecution) map[string]any {
 	if exec.IdempotencyKey != nil {
 		result["idempotency_key"] = *exec.IdempotencyKey
 	}
-	if exec.CoordinatorUsedDeviceID != nil {
-		result["coordinator_used_device_id"] = *exec.CoordinatorUsedDeviceID
+	if exec.CoordinatorUsedUDN != nil {
+		result["coordinator_used_udn"] = *exec.CoordinatorUsedUDN
 	}
 	if exec.EndedAt != nil {
 		result["ended_at"] = api.RFC3339Millis(*exec.EndedAt)

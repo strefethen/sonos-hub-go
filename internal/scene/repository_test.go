@@ -43,8 +43,8 @@ func TestScenesRepository_Create(t *testing.T) {
 		Name:        "Morning Music",
 		Description: &description,
 		Members: []SceneMember{
-			{DeviceID: "device-1", TargetVolume: &volume},
-			{DeviceID: "device-2", RoomName: "Kitchen"},
+			{UDN: "RINCON_TEST001", TargetVolume: &volume},
+			{UDN: "RINCON_TEST002", RoomName: "Kitchen"},
 		},
 		VolumeRamp: &VolumeRamp{Enabled: true, Curve: "linear"},
 	}
@@ -69,7 +69,7 @@ func TestScenesRepository_GetByID(t *testing.T) {
 
 	scene, err := repo.Create(CreateSceneInput{
 		Name:    "Test Scene",
-		Members: []SceneMember{{DeviceID: "device-1"}},
+		Members: []SceneMember{{UDN: "RINCON_TEST001"}},
 	})
 	require.NoError(t, err)
 
@@ -115,7 +115,7 @@ func TestScenesRepository_Update(t *testing.T) {
 
 	scene, err := repo.Create(CreateSceneInput{
 		Name:    "Original Name",
-		Members: []SceneMember{{DeviceID: "device-1"}},
+		Members: []SceneMember{{UDN: "RINCON_TEST001"}},
 	})
 	require.NoError(t, err)
 
@@ -243,13 +243,13 @@ func TestExecutionsRepository_SetCoordinator(t *testing.T) {
 	exec, err := execRepo.Create(CreateExecutionInput{SceneID: scene.SceneID})
 	require.NoError(t, err)
 
-	err = execRepo.SetCoordinator(exec.SceneExecutionID, "device-coordinator")
+	err = execRepo.SetCoordinator(exec.SceneExecutionID, "RINCON_COORDINATOR001")
 	require.NoError(t, err)
 
 	updated, err := execRepo.GetByID(exec.SceneExecutionID)
 	require.NoError(t, err)
-	require.NotNil(t, updated.CoordinatorUsedDeviceID)
-	require.Equal(t, "device-coordinator", *updated.CoordinatorUsedDeviceID)
+	require.NotNil(t, updated.CoordinatorUsedUDN)
+	require.Equal(t, "RINCON_COORDINATOR001", *updated.CoordinatorUsedUDN)
 }
 
 func TestExecutionsRepository_Complete(t *testing.T) {

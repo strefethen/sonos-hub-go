@@ -49,13 +49,13 @@ func NewExecutor(
 // Execute runs a scene execution through all steps.
 func (e *Executor) Execute(scene *Scene, execution *SceneExecution, options ExecuteOptions) (*SceneExecution, error) {
 	var coordinatorIP string
-	var coordinatorDeviceID string
+	var coordinatorUDN string
 	var lockAcquired bool
 
 	// Ensure lock is released on exit
 	defer func() {
-		if lockAcquired && coordinatorDeviceID != "" {
-			e.lock.Unlock(coordinatorDeviceID)
+		if lockAcquired && coordinatorUDN != "" {
+			e.lock.Unlock(coordinatorUDN)
 			e.updateStep(execution.SceneExecutionID, "release_lock", StepStatusCompleted, nil, nil)
 		}
 	}()
@@ -68,19 +68,19 @@ func (e *Executor) Execute(scene *Scene, execution *SceneExecution, options Exec
 		return e.failExecution(execution, err)
 	}
 	coordinatorIP = coordinator.IP
-	coordinatorDeviceID = coordinator.DeviceID
-	if err := e.execRepo.SetCoordinator(execution.SceneExecutionID, coordinatorDeviceID); err != nil {
+	coordinatorUDN = coordinator.UDN
+	if err := e.execRepo.SetCoordinator(execution.SceneExecutionID, coordinatorUDN); err != nil {
 		e.logger.Printf("Failed to set coordinator: %v", err)
 	}
 	e.updateStep(execution.SceneExecutionID, "determine_coordinator", StepStatusCompleted, nil, map[string]any{
-		"coordinator_device_id": coordinatorDeviceID,
-		"coordinator_ip":        coordinatorIP,
+		"coordinator_udn": coordinatorUDN,
+		"coordinator_ip":  coordinatorIP,
 	})
 
 	// Step 2: Acquire lock
 	e.updateStep(execution.SceneExecutionID, "acquire_lock", StepStatusRunning, nil, nil)
-	if !e.lock.TryLock(coordinatorDeviceID) {
-		err := fmt.Errorf("coordinator %s is locked by another execution", coordinatorDeviceID)
+	if !e.lock.TryLock(coordinatorUDN) {
+		err := fmt.Errorf("coordinator %s is locked by another execution", coordinatorUDN)
 		e.updateStep(execution.SceneExecutionID, "acquire_lock", StepStatusFailed, &err, nil)
 		return e.failExecution(execution, err)
 	}
@@ -89,7 +89,7 @@ func (e *Executor) Execute(scene *Scene, execution *SceneExecution, options Exec
 
 	// Step 3: Ensure group
 	e.updateStep(execution.SceneExecutionID, "ensure_group", StepStatusRunning, nil, nil)
-	groupResults := e.ensureGroup(scene, coordinatorIP, coordinatorDeviceID)
+	groupResults := e.ensureGroup(scene, coordinatorIP, coordinatorUDN)
 	e.updateStep(execution.SceneExecutionID, "ensure_group", StepStatusCompleted, nil, map[string]any{
 		"results": groupResults,
 	})
@@ -143,7 +143,7 @@ func (e *Executor) Execute(scene *Scene, execution *SceneExecution, options Exec
 
 // coordinatorInfo holds resolved coordinator information.
 type coordinatorInfo struct {
-	DeviceID string
+	UDN      string
 	IP       string
 	RoomName string
 }
@@ -163,7 +163,7 @@ func (e *Executor) determineCoordinator(scene *Scene, options ExecuteOptions) (*
 				if isArcBeamRay(device.Model) {
 					// Check if it's a scene member
 					for _, member := range scene.Members {
-						if member.DeviceID == device.DeviceID || member.RoomName == device.RoomName {
+						if member.UDN == device.UDN || member.RoomName == device.RoomName {
 							// Check if it's in TV mode and policy says skip
 							if options.TVPolicy == TVPolicySkip {
 								// Check media info for TV mode
@@ -176,7 +176,7 @@ func (e *Executor) determineCoordinator(scene *Scene, options ExecuteOptions) (*
 								}
 							}
 							return &coordinatorInfo{
-								DeviceID: device.DeviceID,
+								UDN:      device.UDN,
 								IP:       device.IP,
 								RoomName: device.RoomName,
 							}, nil
@@ -196,42 +196,29 @@ func (e *Executor) determineCoordinator(scene *Scene, options ExecuteOptions) (*
 
 	roomName := firstMember.RoomName
 	if roomName == "" {
-		roomName = firstMember.DeviceID
+		roomName = firstMember.UDN
 	}
 
 	return &coordinatorInfo{
-		DeviceID: firstMember.DeviceID,
+		UDN:      firstMember.UDN,
 		IP:       ip,
 		RoomName: roomName,
 	}, nil
 }
 
 // ensureGroup joins all members to the coordinator.
-func (e *Executor) ensureGroup(scene *Scene, coordinatorIP, coordinatorDeviceID string) []map[string]any {
+func (e *Executor) ensureGroup(scene *Scene, coordinatorIP, coordinatorUDN string) []map[string]any {
 	var results []map[string]any
 
-	// Get coordinator UUID for group URI
-	topology, _ := e.deviceService.GetTopology()
-
-	var coordinatorUUID string
-	for _, device := range topology.Devices {
-		if device.DeviceID == coordinatorDeviceID {
-			// Extract UUID from device
-			coordinatorUUID = device.DeviceID
-			break
-		}
-	}
-
-	if coordinatorUUID == "" {
-		coordinatorUUID = "RINCON_" + strings.ReplaceAll(coordinatorDeviceID, "-", "")
-	}
+	// coordinatorUDN is already a RINCON_ format UDN
+	coordinatorUUID := coordinatorUDN
 
 	for _, member := range scene.Members {
-		if member.DeviceID == coordinatorDeviceID {
+		if member.UDN == coordinatorUDN {
 			results = append(results, map[string]any{
-				"device_id": member.DeviceID,
-				"skipped":   true,
-				"reason":    "is_coordinator",
+				"udn":     member.UDN,
+				"skipped": true,
+				"reason":  "is_coordinator",
 			})
 			continue
 		}
@@ -239,9 +226,9 @@ func (e *Executor) ensureGroup(scene *Scene, coordinatorIP, coordinatorDeviceID 
 		memberIP, err := e.resolveMemberIP(member)
 		if err != nil {
 			results = append(results, map[string]any{
-				"device_id": member.DeviceID,
-				"success":   false,
-				"error":     err.Error(),
+				"udn":     member.UDN,
+				"success": false,
+				"error":   err.Error(),
 			})
 			continue
 		}
@@ -254,14 +241,14 @@ func (e *Executor) ensureGroup(scene *Scene, coordinatorIP, coordinatorDeviceID 
 
 		if err != nil {
 			results = append(results, map[string]any{
-				"device_id": member.DeviceID,
-				"success":   false,
-				"error":     err.Error(),
+				"udn":     member.UDN,
+				"success": false,
+				"error":   err.Error(),
 			})
 		} else {
 			results = append(results, map[string]any{
-				"device_id": member.DeviceID,
-				"success":   true,
+				"udn":     member.UDN,
+				"success": true,
 			})
 		}
 	}
@@ -281,9 +268,9 @@ func (e *Executor) applyVolume(scene *Scene) []map[string]any {
 		memberIP, err := e.resolveMemberIP(member)
 		if err != nil {
 			results = append(results, map[string]any{
-				"device_id": member.DeviceID,
-				"success":   false,
-				"error":     err.Error(),
+				"udn":     member.UDN,
+				"success": false,
+				"error":   err.Error(),
 			})
 			continue
 		}
@@ -294,15 +281,15 @@ func (e *Executor) applyVolume(scene *Scene) []map[string]any {
 
 		if err != nil {
 			results = append(results, map[string]any{
-				"device_id": member.DeviceID,
-				"success":   false,
-				"error":     err.Error(),
+				"udn":     member.UDN,
+				"success": false,
+				"error":   err.Error(),
 			})
 		} else {
 			results = append(results, map[string]any{
-				"device_id": member.DeviceID,
-				"success":   true,
-				"volume":    *member.TargetVolume,
+				"udn":     member.UDN,
+				"success": true,
+				"volume":  *member.TargetVolume,
 			})
 		}
 	}
@@ -430,13 +417,13 @@ func (e *Executor) verifyPlayback(coordinatorIP string) Verification {
 
 // resolveMemberIP resolves a scene member to an IP address.
 func (e *Executor) resolveMemberIP(member SceneMember) (string, error) {
-	// Try device_id first
-	ip, err := e.deviceService.ResolveDeviceIP(member.DeviceID)
+	// Try UDN first (primary identifier)
+	ip, err := e.deviceService.ResolveDeviceIP(member.UDN)
 	if err == nil && ip != "" {
 		return ip, nil
 	}
 
-	// Fallback to room_name if device_id failed
+	// Fallback to room_name if UDN resolution failed
 	if member.RoomName != "" {
 		ip, err = e.deviceService.ResolveDeviceIP(member.RoomName)
 		if err == nil && ip != "" {
@@ -445,7 +432,7 @@ func (e *Executor) resolveMemberIP(member SceneMember) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("could not resolve device IP for %s (room: %s)", member.DeviceID, member.RoomName)
+	return "", fmt.Errorf("could not resolve device IP for %s (room: %s)", member.UDN, member.RoomName)
 }
 
 // updateStep updates a step's status in the execution record.

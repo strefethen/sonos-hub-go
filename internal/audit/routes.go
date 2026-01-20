@@ -66,7 +66,7 @@ type CreateEventCorrelation struct {
 	RoutineID        *string `json:"routine_id,omitempty"`
 	JobID            *string `json:"job_id,omitempty"`
 	SceneExecutionID *string `json:"scene_execution_id,omitempty"`
-	DeviceID         *string `json:"device_id,omitempty"`
+	UDN              *string `json:"udn,omitempty"`
 }
 
 // ==========================================================================
@@ -184,7 +184,7 @@ func recordEvent(service *Service) func(w http.ResponseWriter, r *http.Request) 
 			input.RoutineID = req.Correlation.RoutineID
 			input.JobID = req.Correlation.JobID
 			input.SceneExecutionID = req.Correlation.SceneExecutionID
-			input.DeviceID = req.Correlation.DeviceID
+			input.UDN = req.Correlation.UDN
 		}
 
 		event, err := service.RecordEvent(input)
@@ -253,8 +253,8 @@ func parseQueryFilters(r *http.Request) (EventQueryFilters, error) {
 	if sceneExecutionID := query.Get("scene_execution_id"); sceneExecutionID != "" {
 		filters.SceneExecutionID = &sceneExecutionID
 	}
-	if deviceID := query.Get("device_id"); deviceID != "" {
-		filters.DeviceID = &deviceID
+	if udn := query.Get("udn"); udn != "" {
+		filters.UDN = &udn
 	}
 
 	// Parse 'limit' (1-1000, default 100)
@@ -307,8 +307,8 @@ func formatEvent(event *AuditEvent) map[string]any {
 	if event.SceneExecutionID != nil {
 		correlation["scene_execution_id"] = *event.SceneExecutionID
 	}
-	if event.DeviceID != nil {
-		correlation["device_id"] = *event.DeviceID
+	if event.UDN != nil {
+		correlation["udn"] = *event.UDN
 	}
 	if len(correlation) > 0 {
 		result["correlation"] = correlation

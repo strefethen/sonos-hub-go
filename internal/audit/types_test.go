@@ -52,14 +52,14 @@ func TestEventCorrelationJSON(t *testing.T) {
 	routineID := "routine-456"
 	jobID := "job-789"
 	sceneExecID := "exec-012"
-	deviceID := "device-345"
+	udn := "RINCON_TEST123456789"
 
 	correlation := EventCorrelation{
 		RequestID:        &requestID,
 		RoutineID:        &routineID,
 		JobID:            &jobID,
 		SceneExecutionID: &sceneExecID,
-		DeviceID:         &deviceID,
+		UDN:              &udn,
 	}
 
 	data, err := json.Marshal(correlation)
@@ -76,8 +76,8 @@ func TestEventCorrelationJSON(t *testing.T) {
 	require.Equal(t, "job-789", *decoded.JobID)
 	require.NotNil(t, decoded.SceneExecutionID)
 	require.Equal(t, "exec-012", *decoded.SceneExecutionID)
-	require.NotNil(t, decoded.DeviceID)
-	require.Equal(t, "device-345", *decoded.DeviceID)
+	require.NotNil(t, decoded.UDN)
+	require.Equal(t, "RINCON_TEST123456789", *decoded.UDN)
 }
 
 func TestEventCorrelationJSONOmitsEmpty(t *testing.T) {
@@ -97,8 +97,8 @@ func TestEventCorrelationJSONOmitsEmpty(t *testing.T) {
 	require.False(t, hasJobID)
 	_, hasSceneExecID := m["scene_execution_id"]
 	require.False(t, hasSceneExecID)
-	_, hasDeviceID := m["device_id"]
-	require.False(t, hasDeviceID)
+	_, hasUDN := m["udn"]
+	require.False(t, hasUDN)
 }
 
 func TestEventCorrelationPartialJSON(t *testing.T) {
@@ -187,14 +187,14 @@ func TestAuditEventJSONWithEmptyPayload(t *testing.T) {
 
 func TestAuditEventJSONErrorLevel(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
-	deviceID := "device-123"
+	udn := "RINCON_TEST123456789"
 
 	event := AuditEvent{
 		EventID:   "event-456",
 		Timestamp: now,
 		Type:      string(EventJobFailed),
 		Level:     EventLevelError,
-		DeviceID:  &deviceID,
+		UDN:       &udn,
 		Message:   "Failed to execute job",
 		Payload: map[string]any{
 			"error": "connection timeout",
@@ -209,8 +209,8 @@ func TestAuditEventJSONErrorLevel(t *testing.T) {
 
 	require.Equal(t, string(EventJobFailed), decoded.Type)
 	require.Equal(t, EventLevelError, decoded.Level)
-	require.NotNil(t, decoded.DeviceID)
-	require.Equal(t, "device-123", *decoded.DeviceID)
+	require.NotNil(t, decoded.UDN)
+	require.Equal(t, "RINCON_TEST123456789", *decoded.UDN)
 	require.Equal(t, "connection timeout", decoded.Payload["error"])
 }
 
@@ -243,7 +243,7 @@ func TestAuditEventUnmarshalFromRawJSON(t *testing.T) {
 		"type": "SCENE_EXECUTION_COMPLETED",
 		"level": "INFO",
 		"scene_execution_id": "exec-123",
-		"device_id": "dev-456",
+		"udn": "RINCON_TEST123456789",
 		"message": "Scene execution completed",
 		"payload": {
 			"duration_ms": 2500,
@@ -260,8 +260,8 @@ func TestAuditEventUnmarshalFromRawJSON(t *testing.T) {
 	require.Equal(t, EventLevelInfo, event.Level)
 	require.NotNil(t, event.SceneExecutionID)
 	require.Equal(t, "exec-123", *event.SceneExecutionID)
-	require.NotNil(t, event.DeviceID)
-	require.Equal(t, "dev-456", *event.DeviceID)
+	require.NotNil(t, event.UDN)
+	require.Equal(t, "RINCON_TEST123456789", *event.UDN)
 	require.Equal(t, "Scene execution completed", event.Message)
 	require.Equal(t, float64(2500), event.Payload["duration_ms"])
 	require.Equal(t, float64(5), event.Payload["steps_completed"])
@@ -310,7 +310,7 @@ func TestEventQueryFilters(t *testing.T) {
 	jobID := "job-123"
 	routineID := "routine-456"
 	sceneExecID := "exec-789"
-	deviceID := "device-012"
+	udn := "RINCON_TEST123456789"
 
 	filters := EventQueryFilters{
 		StartDate:        &startDate,
@@ -320,7 +320,7 @@ func TestEventQueryFilters(t *testing.T) {
 		JobID:            &jobID,
 		RoutineID:        &routineID,
 		SceneExecutionID: &sceneExecID,
-		DeviceID:         &deviceID,
+		UDN:              &udn,
 		Limit:            100,
 		Offset:           50,
 	}
@@ -337,8 +337,8 @@ func TestEventQueryFilters(t *testing.T) {
 	require.Equal(t, "routine-456", *filters.RoutineID)
 	require.NotNil(t, filters.SceneExecutionID)
 	require.Equal(t, "exec-789", *filters.SceneExecutionID)
-	require.NotNil(t, filters.DeviceID)
-	require.Equal(t, "device-012", *filters.DeviceID)
+	require.NotNil(t, filters.UDN)
+	require.Equal(t, "RINCON_TEST123456789", *filters.UDN)
 	require.Equal(t, 100, filters.Limit)
 	require.Equal(t, 50, filters.Offset)
 }
@@ -356,7 +356,7 @@ func TestEventQueryFiltersEmpty(t *testing.T) {
 	require.Nil(t, filters.JobID)
 	require.Nil(t, filters.RoutineID)
 	require.Nil(t, filters.SceneExecutionID)
-	require.Nil(t, filters.DeviceID)
+	require.Nil(t, filters.UDN)
 	require.Equal(t, 50, filters.Limit)
 	require.Equal(t, 0, filters.Offset)
 }
@@ -379,7 +379,7 @@ func TestEventCorrelationToAuditEventFields(t *testing.T) {
 		RoutineID:        ptrString("routine-456"),
 		JobID:            ptrString("job-789"),
 		SceneExecutionID: ptrString("exec-012"),
-		DeviceID:         ptrString("device-345"),
+		UDN:              ptrString("RINCON_TEST123456789"),
 	}
 
 	event := AuditEvent{
@@ -390,7 +390,7 @@ func TestEventCorrelationToAuditEventFields(t *testing.T) {
 		RoutineID:        correlation.RoutineID,
 		JobID:            correlation.JobID,
 		SceneExecutionID: correlation.SceneExecutionID,
-		DeviceID:         correlation.DeviceID,
+		UDN:              correlation.UDN,
 		Message:          "Job started",
 		Payload:          map[string]any{},
 	}
@@ -399,7 +399,7 @@ func TestEventCorrelationToAuditEventFields(t *testing.T) {
 	require.Equal(t, "routine-456", *event.RoutineID)
 	require.Equal(t, "job-789", *event.JobID)
 	require.Equal(t, "exec-012", *event.SceneExecutionID)
-	require.Equal(t, "device-345", *event.DeviceID)
+	require.Equal(t, "RINCON_TEST123456789", *event.UDN)
 }
 
 // ptrString is a helper function to create a pointer to a string

@@ -34,8 +34,8 @@ const (
 
 // Speaker represents a speaker configuration for a routine.
 type Speaker struct {
-	DeviceID string `json:"device_id"`
-	Volume   *int   `json:"volume,omitempty"`
+	UDN    string `json:"udn"`
+	Volume *int   `json:"volume,omitempty"`
 }
 
 // ==========================================================================

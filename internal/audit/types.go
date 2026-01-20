@@ -32,7 +32,7 @@ type EventCorrelation struct {
 	RoutineID        *string `json:"routine_id,omitempty"`
 	JobID            *string `json:"job_id,omitempty"`
 	SceneExecutionID *string `json:"scene_execution_id,omitempty"`
-	DeviceID         *string `json:"device_id,omitempty"`
+	UDN              *string `json:"udn,omitempty"`
 }
 
 // Alias constants to match new naming convention while preserving compatibility

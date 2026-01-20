@@ -89,14 +89,19 @@ func TestScheduleJSONOmitsEmpty(t *testing.T) {
 }
 
 func TestMusicPolicyJSON(t *testing.T) {
-	shuffle := "SHUFFLE_ON"
-	repeat := "REPEAT_ALL"
-	source := "spotify"
+	favoriteID := "FV:2/77"
+	favoriteName := "Tim McGraw"
+	artworkUrl := "https://example.com/artwork.jpg"
+	serviceLogoUrl := "/v1/assets/service-logos/spotify.png"
+	serviceName := "Spotify"
 
 	policy := MusicPolicy{
-		ShuffleMode:     &shuffle,
-		RepeatMode:      &repeat,
-		PreferredSource: &source,
+		Type:                       "FIXED",
+		SonosFavoriteID:            &favoriteID,
+		SonosFavoriteName:          &favoriteName,
+		SonosFavoriteArtworkUrl:    &artworkUrl,
+		SonosFavoriteServiceLogoUrl: &serviceLogoUrl,
+		SonosFavoriteServiceName:   &serviceName,
 	}
 
 	data, err := json.Marshal(policy)
@@ -105,12 +110,15 @@ func TestMusicPolicyJSON(t *testing.T) {
 	var decoded MusicPolicy
 	require.NoError(t, json.Unmarshal(data, &decoded))
 
-	require.NotNil(t, decoded.ShuffleMode)
-	require.Equal(t, "SHUFFLE_ON", *decoded.ShuffleMode)
-	require.NotNil(t, decoded.RepeatMode)
-	require.Equal(t, "REPEAT_ALL", *decoded.RepeatMode)
-	require.NotNil(t, decoded.PreferredSource)
-	require.Equal(t, "spotify", *decoded.PreferredSource)
+	require.Equal(t, "FIXED", decoded.Type)
+	require.NotNil(t, decoded.SonosFavoriteID)
+	require.Equal(t, "FV:2/77", *decoded.SonosFavoriteID)
+	require.NotNil(t, decoded.SonosFavoriteName)
+	require.Equal(t, "Tim McGraw", *decoded.SonosFavoriteName)
+	require.NotNil(t, decoded.SonosFavoriteServiceLogoUrl)
+	require.Equal(t, "/v1/assets/service-logos/spotify.png", *decoded.SonosFavoriteServiceLogoUrl)
+	require.NotNil(t, decoded.SonosFavoriteServiceName)
+	require.Equal(t, "Spotify", *decoded.SonosFavoriteServiceName)
 }
 
 func TestMusicPolicyJSONOmitsEmpty(t *testing.T) {
@@ -122,17 +130,17 @@ func TestMusicPolicyJSONOmitsEmpty(t *testing.T) {
 	var m map[string]any
 	require.NoError(t, json.Unmarshal(data, &m))
 
-	_, hasShuffle := m["shuffle_mode"]
-	require.False(t, hasShuffle)
-	_, hasRepeat := m["repeat_mode"]
-	require.False(t, hasRepeat)
-	_, hasSource := m["preferred_source"]
-	require.False(t, hasSource)
+	_, hasFavoriteID := m["sonos_favorite_id"]
+	require.False(t, hasFavoriteID)
+	_, hasFavoriteName := m["sonos_favorite_name"]
+	require.False(t, hasFavoriteName)
+	_, hasServiceLogoUrl := m["sonos_favorite_service_logo_url"]
+	require.False(t, hasServiceLogoUrl)
 }
 
 func TestRoutineJSON(t *testing.T) {
 	description := "Morning music routine"
-	shuffle := "SHUFFLE_ON"
+	favoriteID := "FV:2/77"
 	now := time.Now().UTC().Truncate(time.Second)
 	lastRun := now.Add(-24 * time.Hour)
 	nextRun := now.Add(time.Hour)
@@ -146,7 +154,8 @@ func TestRoutineJSON(t *testing.T) {
 		ScheduleWeekdays: []int{1, 2, 3, 4, 5},
 		ScheduleTime:     "07:00",
 		MusicPolicy: &MusicPolicy{
-			ShuffleMode: &shuffle,
+			Type:            "FIXED",
+			SonosFavoriteID: &favoriteID,
 		},
 		HolidayBehavior: HolidayBehaviorSkip,
 		Timezone:        "America/New_York",
@@ -172,8 +181,9 @@ func TestRoutineJSON(t *testing.T) {
 	require.Equal(t, []int{1, 2, 3, 4, 5}, decoded.ScheduleWeekdays)
 	require.Equal(t, "07:00", decoded.ScheduleTime)
 	require.NotNil(t, decoded.MusicPolicy)
-	require.NotNil(t, decoded.MusicPolicy.ShuffleMode)
-	require.Equal(t, "SHUFFLE_ON", *decoded.MusicPolicy.ShuffleMode)
+	require.Equal(t, "FIXED", decoded.MusicPolicy.Type)
+	require.NotNil(t, decoded.MusicPolicy.SonosFavoriteID)
+	require.Equal(t, "FV:2/77", *decoded.MusicPolicy.SonosFavoriteID)
 	require.Equal(t, HolidayBehaviorSkip, decoded.HolidayBehavior)
 	require.Equal(t, "America/New_York", decoded.Timezone)
 	require.True(t, decoded.Enabled)
@@ -362,9 +372,8 @@ func TestHolidayJSONNonRecurring(t *testing.T) {
 func TestCreateRoutineInputJSON(t *testing.T) {
 	description := "Test routine"
 	cronExpr := "0 8 * * *"
-	shuffle := "SHUFFLE_ON"
 	enabled := true
-
+	favoriteID := "FV:2/77"
 	input := CreateRoutineInputAPI{
 		Name:        "Test Routine",
 		Description: &description,
@@ -374,7 +383,8 @@ func TestCreateRoutineInputJSON(t *testing.T) {
 			CronExpr: &cronExpr,
 		},
 		MusicPolicy: &MusicPolicy{
-			ShuffleMode: &shuffle,
+			Type:            "FIXED",
+			SonosFavoriteID: &favoriteID,
 		},
 		HolidayBehavior: HolidayBehaviorDelay,
 		Timezone:        "America/Los_Angeles",

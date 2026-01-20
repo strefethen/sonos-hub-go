@@ -27,15 +27,15 @@ func RegisterRoutes(router chi.Router, service *Service) {
 		return api.WriteList(w, "/v1/devices", formatted, false)
 	}))
 
-	router.Method(http.MethodGet, "/v1/devices/{device_id}", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
-		deviceID := chi.URLParam(r, "device_id")
+	router.Method(http.MethodGet, "/v1/devices/{udn}", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
+		udn := chi.URLParam(r, "udn")
 
-		device, err := service.GetDevice(deviceID)
+		device, err := service.GetDevice(udn)
 		if err != nil {
 			return apperrors.NewInternalError("Failed to load device")
 		}
 		if device == nil {
-			return apperrors.NewNotFoundResource("Device", deviceID)
+			return apperrors.NewNotFoundResource("Device", udn)
 		}
 
 		// Stripe-style: return resource directly
@@ -143,11 +143,6 @@ func RegisterRoutes(router chi.Router, service *Service) {
 }
 
 func formatDevice(device LogicalDevice) map[string]any {
-	var primaryUDN any = nil
-	if len(device.PhysicalDevices) > 0 {
-		primaryUDN = device.PhysicalDevices[0].UDN
-	}
-
 	logicalGroup := any(nil)
 	if device.LogicalGroupID != "" {
 		logicalGroup = device.LogicalGroupID
@@ -160,8 +155,7 @@ func formatDevice(device LogicalDevice) map[string]any {
 
 	return map[string]any{
 		"object":                 api.ObjectDevice,
-		"id":                     device.DeviceID,
-		"udn":                    primaryUDN,
+		"udn":                    device.UDN, // Primary identifier
 		"room_name":              device.RoomName,
 		"ip":                     device.IP,
 		"model":                  device.Model,
@@ -180,8 +174,7 @@ func formatDevice(device LogicalDevice) map[string]any {
 func formatPhysicalDevice(device PhysicalDevice) map[string]any {
 	return map[string]any{
 		"object":                 api.ObjectPhysicalDevice,
-		"id":                     device.DeviceID,
-		"udn":                    device.UDN,
+		"udn":                    device.UDN, // Primary identifier
 		"model":                  device.Model,
 		"model_number":           device.ModelNumber,
 		"room_name":              device.RoomName,
@@ -195,16 +188,16 @@ func formatPhysicalDevice(device PhysicalDevice) map[string]any {
 }
 
 func dedupeDevices(devices []LogicalDevice) []LogicalDevice {
-	byID := make(map[string]LogicalDevice)
+	byUDN := make(map[string]LogicalDevice)
 	for _, device := range devices {
-		existing, ok := byID[device.DeviceID]
+		existing, ok := byUDN[device.UDN]
 		if !ok || device.LastSeenAt.After(existing.LastSeenAt) {
-			byID[device.DeviceID] = device
+			byUDN[device.UDN] = device
 		}
 	}
 
-	result := make([]LogicalDevice, 0, len(byID))
-	for _, device := range byID {
+	result := make([]LogicalDevice, 0, len(byUDN))
+	for _, device := range byUDN {
 		result = append(result, device)
 	}
 	return result

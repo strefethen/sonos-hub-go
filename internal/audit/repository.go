@@ -30,7 +30,7 @@ type AuditEvent struct {
 	RoutineID        *string        `json:"routine_id,omitempty"`
 	JobID            *string        `json:"job_id,omitempty"`
 	SceneExecutionID *string        `json:"scene_execution_id,omitempty"`
-	DeviceID         *string        `json:"device_id,omitempty"`
+	UDN              *string        `json:"udn,omitempty"`
 	Message          string         `json:"message"`
 	Payload          map[string]any `json:"payload"`
 }
@@ -43,7 +43,7 @@ type WriteEventInput struct {
 	RoutineID        *string        `json:"routine_id,omitempty"`
 	JobID            *string        `json:"job_id,omitempty"`
 	SceneExecutionID *string        `json:"scene_execution_id,omitempty"`
-	DeviceID         *string        `json:"device_id,omitempty"`
+	UDN              *string        `json:"udn,omitempty"`
 	Message          string         `json:"message"`
 	Payload          map[string]any `json:"payload,omitempty"`
 }
@@ -57,7 +57,7 @@ type EventQueryFilters struct {
 	JobID            *string     `json:"job_id,omitempty"`
 	RoutineID        *string     `json:"routine_id,omitempty"`
 	SceneExecutionID *string     `json:"scene_execution_id,omitempty"`
-	DeviceID         *string     `json:"device_id,omitempty"`
+	UDN              *string     `json:"udn,omitempty"`
 	Limit            int         `json:"limit,omitempty"`
 	Offset           int         `json:"offset,omitempty"`
 }
@@ -102,9 +102,9 @@ func (r *Repository) InsertEvent(input WriteEventInput) (*AuditEvent, error) {
 	}
 
 	_, err = r.writer.Exec(`
-		INSERT INTO audit_events (event_id, timestamp, type, level, request_id, routine_id, job_id, scene_execution_id, device_id, message, payload)
+		INSERT INTO audit_events (event_id, timestamp, type, level, request_id, routine_id, job_id, scene_execution_id, udn, message, payload)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, eventID, timestamp, input.Type, string(level), input.RequestID, input.RoutineID, input.JobID, input.SceneExecutionID, input.DeviceID, input.Message, string(payloadJSON))
+	`, eventID, timestamp, input.Type, string(level), input.RequestID, input.RoutineID, input.JobID, input.SceneExecutionID, input.UDN, input.Message, string(payloadJSON))
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +121,7 @@ func (r *Repository) WriteEvent(input WriteEventInput) (*AuditEvent, error) {
 // Returns nil, nil if not found.
 func (r *Repository) GetEvent(eventID string) (*AuditEvent, error) {
 	row := r.reader.QueryRow(`
-		SELECT event_id, timestamp, type, level, request_id, routine_id, job_id, scene_execution_id, device_id, message, payload
+		SELECT event_id, timestamp, type, level, request_id, routine_id, job_id, scene_execution_id, udn, message, payload
 		FROM audit_events
 		WHERE event_id = ?
 	`, eventID)
@@ -155,7 +155,7 @@ func (r *Repository) QueryEvents(filters EventQueryFilters) ([]AuditEvent, int, 
 	}
 
 	query := `
-		SELECT event_id, timestamp, type, level, request_id, routine_id, job_id, scene_execution_id, device_id, message, payload
+		SELECT event_id, timestamp, type, level, request_id, routine_id, job_id, scene_execution_id, udn, message, payload
 		FROM audit_events
 		` + whereClause + `
 		ORDER BY timestamp DESC
@@ -259,9 +259,9 @@ func (r *Repository) buildWhereClause(filters EventQueryFilters) (string, []any)
 		conditions = append(conditions, "scene_execution_id = ?")
 		args = append(args, *filters.SceneExecutionID)
 	}
-	if filters.DeviceID != nil {
-		conditions = append(conditions, "device_id = ?")
-		args = append(args, *filters.DeviceID)
+	if filters.UDN != nil {
+		conditions = append(conditions, "udn = ?")
+		args = append(args, *filters.UDN)
 	}
 	if filters.StartDate != nil {
 		conditions = append(conditions, "timestamp >= ?")
@@ -367,7 +367,7 @@ func (r *Repository) parseEvent(event *AuditEvent, timestamp, level string, requ
 		event.SceneExecutionID = &sceneExecutionID.String
 	}
 	if deviceID.Valid {
-		event.DeviceID = &deviceID.String
+		event.UDN = &deviceID.String
 	}
 
 	if err := json.Unmarshal([]byte(payloadJSON), &event.Payload); err != nil {

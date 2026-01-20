@@ -306,8 +306,8 @@ func TestRoutinesRepository_WithSpeakers(t *testing.T) {
 
 	vol := 50
 	speakers := []Speaker{
-		{DeviceID: "device-1", Volume: &vol},
-		{DeviceID: "device-2"},
+		{UDN: "RINCON_TEST123456789", Volume: &vol},
+		{UDN: "RINCON_TEST987654321"},
 	}
 
 	routine, err := routinesRepo.Create(CreateRoutineInput{
@@ -319,7 +319,7 @@ func TestRoutinesRepository_WithSpeakers(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, routine.SpeakersJSON, 2)
-	require.Equal(t, "device-1", routine.SpeakersJSON[0].DeviceID)
+	require.Equal(t, "RINCON_TEST123456789", routine.SpeakersJSON[0].UDN)
 	require.NotNil(t, routine.SpeakersJSON[0].Volume)
 	require.Equal(t, 50, *routine.SpeakersJSON[0].Volume)
 	require.Nil(t, routine.SpeakersJSON[1].Volume)

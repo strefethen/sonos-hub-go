@@ -493,7 +493,7 @@ func TestReorderItemsInputJSON(t *testing.T) {
 
 func TestPlaySetInputJSON(t *testing.T) {
 	input := PlaySetInput{
-		DeviceID:  "RINCON_123",
+		UDN:       "RINCON_123",
 		QueueMode: string(QueueModeReplaceAndPlay),
 	}
 
@@ -509,8 +509,8 @@ func TestPlaySetInputJSON(t *testing.T) {
 		t.Fatalf("failed to unmarshal PlaySetInput: %v", err)
 	}
 
-	if decoded.DeviceID != input.DeviceID {
-		t.Errorf("DeviceID mismatch: got %s, want %s", decoded.DeviceID, input.DeviceID)
+	if decoded.UDN != input.UDN {
+		t.Errorf("UDN mismatch: got %s, want %s", decoded.UDN, input.UDN)
 	}
 	if decoded.QueueMode != input.QueueMode {
 		t.Errorf("QueueMode mismatch: got %s, want %s", decoded.QueueMode, input.QueueMode)
@@ -519,7 +519,7 @@ func TestPlaySetInputJSON(t *testing.T) {
 
 func TestPlaySetInputJSON_OmitEmptyQueueMode(t *testing.T) {
 	input := PlaySetInput{
-		DeviceID: "RINCON_123",
+		UDN: "RINCON_123",
 		// QueueMode intentionally empty
 	}
 

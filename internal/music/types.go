@@ -37,7 +37,8 @@ type MusicSet struct {
 	CurrentIndex    int       `json:"current_index"`
 	OccasionStart   *string   `json:"occasion_start,omitempty"` // MM-DD format
 	OccasionEnd     *string   `json:"occasion_end,omitempty"`   // MM-DD format
-	ItemCount       int       `json:"item_count,omitempty"`     // Computed field
+	ArtworkURL      *string   `json:"artwork_url,omitempty"`
+	ItemCount       int       `json:"item_count,omitempty"` // Computed field
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 }
@@ -49,6 +50,8 @@ type SetItem struct {
 	Position        int       `json:"position"`
 	ServiceLogoURL  *string   `json:"service_logo_url,omitempty"`
 	ServiceName     *string   `json:"service_name,omitempty"`
+	ArtworkURL      *string   `json:"artwork_url,omitempty"`
+	DisplayName     *string   `json:"display_name,omitempty"`
 	ContentType     string    `json:"content_type"`
 	ContentJSON     *string   `json:"content_json,omitempty"`
 	AddedAt         time.Time `json:"added_at"`
@@ -102,6 +105,8 @@ type AddItemInput struct {
 	SonosFavoriteID string  `json:"sonos_favorite_id"`
 	ServiceLogoURL  *string `json:"service_logo_url,omitempty"`
 	ServiceName     *string `json:"service_name,omitempty"`
+	ArtworkURL      *string `json:"artwork_url,omitempty"`
+	DisplayName     *string `json:"display_name,omitempty"`
 	ContentType     string  `json:"content_type,omitempty"`
 	ContentJSON     *string `json:"content_json,omitempty"`
 }
@@ -113,7 +118,7 @@ type ReorderItemsInput struct {
 
 // PlaySetInput contains the input for playing a music set on a device.
 type PlaySetInput struct {
-	DeviceID  string `json:"device_id"`
+	UDN       string `json:"udn"`
 	SpeakerID string `json:"speaker_id"` // Node.js uses speaker_id
 	Volume    *int   `json:"volume,omitempty"`
 	QueueMode string `json:"queue_mode,omitempty"`

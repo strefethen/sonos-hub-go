@@ -21,14 +21,14 @@ func TestTVRoutingSettingsDefaults(t *testing.T) {
 	require.False(t, settings.AlwaysSkipOnTV)
 	require.Equal(t, 5, settings.RetryOnTVTimeout)
 	require.Empty(t, settings.FallbackRooms)
-	require.Nil(t, settings.FallbackDeviceID)
+	require.Nil(t, settings.FallbackUDN)
 }
 
 func TestTVRoutingSettingsWithFallback(t *testing.T) {
-	fallbackDeviceID := "device-123"
+	fallbackUDN := "RINCON_TEST123456789"
 	settings := TVRoutingSettings{
 		ArcTVPolicy:      "USE_FALLBACK",
-		FallbackDeviceID: &fallbackDeviceID,
+		FallbackUDN:      &fallbackUDN,
 		FallbackRooms:    []string{"living_room", "kitchen"},
 		AlwaysSkipOnTV:   false,
 		RetryOnTVTimeout: 10,
@@ -36,8 +36,8 @@ func TestTVRoutingSettingsWithFallback(t *testing.T) {
 	}
 
 	require.Equal(t, "USE_FALLBACK", settings.ArcTVPolicy)
-	require.NotNil(t, settings.FallbackDeviceID)
-	require.Equal(t, "device-123", *settings.FallbackDeviceID)
+	require.NotNil(t, settings.FallbackUDN)
+	require.Equal(t, "RINCON_TEST123456789", *settings.FallbackUDN)
 	require.Len(t, settings.FallbackRooms, 2)
 	require.Contains(t, settings.FallbackRooms, "living_room")
 	require.Contains(t, settings.FallbackRooms, "kitchen")
@@ -73,15 +73,15 @@ func TestUpdateTVRoutingInputPartial(t *testing.T) {
 	require.NotNil(t, input.ArcTVPolicy)
 	require.Nil(t, input.AlwaysSkipOnTV)
 	require.Nil(t, input.RetryOnTVTimeout)
-	require.Nil(t, input.FallbackDeviceID)
+	require.Nil(t, input.FallbackUDN)
 	require.Nil(t, input.FallbackRooms)
 }
 
 func TestFormatTVRoutingSettings(t *testing.T) {
-	fallbackDeviceID := "device-123"
+	fallbackUDN := "RINCON_TEST123456789"
 	settings := &TVRoutingSettings{
 		ArcTVPolicy:      "USE_FALLBACK",
-		FallbackDeviceID: &fallbackDeviceID,
+		FallbackUDN:      &fallbackUDN,
 		FallbackRooms:    []string{"living_room"},
 		AlwaysSkipOnTV:   true,
 		RetryOnTVTimeout: 10,
@@ -91,7 +91,7 @@ func TestFormatTVRoutingSettings(t *testing.T) {
 	formatted := formatTVRoutingSettings(settings)
 
 	require.Equal(t, "USE_FALLBACK", formatted["arc_tv_policy"])
-	require.Equal(t, "device-123", formatted["fallback_device_id"])
+	require.Equal(t, "RINCON_TEST123456789", formatted["fallback_udn"])
 	require.Equal(t, true, formatted["always_skip_on_tv"])
 	require.Equal(t, 10, formatted["retry_on_tv_timeout_seconds"])
 	require.NotNil(t, formatted["fallback_rooms"])
@@ -110,15 +110,15 @@ func TestFormatTVRoutingSettingsWithoutFallbackDevice(t *testing.T) {
 	formatted := formatTVRoutingSettings(settings)
 
 	require.Equal(t, "SKIP", formatted["arc_tv_policy"])
-	_, hasFallbackDevice := formatted["fallback_device_id"]
-	require.False(t, hasFallbackDevice)
+	_, hasFallbackUDN := formatted["fallback_udn"]
+	require.False(t, hasFallbackUDN)
 }
 
 func TestTVRoutingSettingsJSON(t *testing.T) {
-	fallbackDeviceID := "device-123"
+	fallbackUDN := "RINCON_TEST123456789"
 	settings := TVRoutingSettings{
 		ArcTVPolicy:      "USE_FALLBACK",
-		FallbackDeviceID: &fallbackDeviceID,
+		FallbackUDN:      &fallbackUDN,
 		FallbackRooms:    []string{"living_room", "kitchen"},
 		AlwaysSkipOnTV:   true,
 		RetryOnTVTimeout: 10,
@@ -132,8 +132,8 @@ func TestTVRoutingSettingsJSON(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &decoded))
 
 	require.Equal(t, "USE_FALLBACK", decoded.ArcTVPolicy)
-	require.NotNil(t, decoded.FallbackDeviceID)
-	require.Equal(t, "device-123", *decoded.FallbackDeviceID)
+	require.NotNil(t, decoded.FallbackUDN)
+	require.Equal(t, "RINCON_TEST123456789", *decoded.FallbackUDN)
 	require.Len(t, decoded.FallbackRooms, 2)
 	require.True(t, decoded.AlwaysSkipOnTV)
 	require.Equal(t, 10, decoded.RetryOnTVTimeout)

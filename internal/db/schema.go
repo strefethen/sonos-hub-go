@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS scene_executions (
   scene_execution_id TEXT PRIMARY KEY,
   scene_id TEXT NOT NULL,
   idempotency_key TEXT,
-  coordinator_used_device_id TEXT,
+  coordinator_used_udn TEXT,
   status TEXT NOT NULL DEFAULT 'STARTING',
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
   ended_at TEXT,
@@ -113,6 +113,11 @@ CREATE TABLE IF NOT EXISTS routine_templates (
   description TEXT,
   category TEXT NOT NULL,
   sort_order INTEGER DEFAULT 0,
+  icon TEXT,
+  image_name TEXT,
+  gradient_color_1 TEXT,
+  gradient_color_2 TEXT,
+  accent_color TEXT,
   timezone TEXT DEFAULT 'America/Los_Angeles',
   schedule_type TEXT DEFAULT 'weekly',
   schedule_weekdays TEXT,
@@ -143,6 +148,7 @@ CREATE TABLE IF NOT EXISTS music_sets (
   current_index INTEGER DEFAULT 0,
   occasion_start TEXT,
   occasion_end TEXT,
+  artwork_url TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -154,6 +160,8 @@ CREATE TABLE IF NOT EXISTS set_items (
   added_at TEXT NOT NULL,
   service_logo_url TEXT,
   service_name TEXT,
+  artwork_url TEXT,
+  display_name TEXT,
   content_type TEXT DEFAULT 'sonos_favorite',
   content_json TEXT,
   PRIMARY KEY (set_id, sonos_favorite_id),
@@ -188,7 +196,7 @@ CREATE TABLE IF NOT EXISTS audit_events (
   routine_id TEXT,
   job_id TEXT,
   scene_execution_id TEXT,
-  device_id TEXT,
+  udn TEXT,
   message TEXT NOT NULL,
   payload TEXT NOT NULL DEFAULT '{}'
 );
@@ -199,7 +207,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_level ON audit_events(level);
 CREATE INDEX IF NOT EXISTS idx_audit_events_job_id ON audit_events(job_id) WHERE job_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_audit_events_routine_id ON audit_events(routine_id) WHERE routine_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_audit_events_scene_execution_id ON audit_events(scene_execution_id) WHERE scene_execution_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_audit_events_device_id ON audit_events(device_id) WHERE device_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_audit_events_udn ON audit_events(udn) WHERE udn IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_audit_events_timestamp_level ON audit_events(timestamp DESC, level);
 
 -- ==========================================================================
@@ -215,7 +223,7 @@ CREATE TABLE IF NOT EXISTS settings (
 -- Insert default TV routing settings
 INSERT OR IGNORE INTO settings (key, value) VALUES
   ('tv_routing_enabled', 'true'),
-  ('tv_default_fallback_device_id', ''),
+  ('tv_default_fallback_udn', ''),
   ('tv_default_policy', 'USE_FALLBACK');
 
 -- ==========================================================================

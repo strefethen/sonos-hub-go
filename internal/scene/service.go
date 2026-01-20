@@ -203,9 +203,9 @@ func (s *Service) executeOnMembers(scene *Scene, fn func(ip string) error) ([]De
 		go func(idx int, m SceneMember) {
 			defer wg.Done()
 
-			result := DeviceResult{DeviceID: m.DeviceID}
+			result := DeviceResult{UDN: m.UDN}
 
-			ip, err := s.deviceService.ResolveDeviceIP(m.DeviceID)
+			ip, err := s.deviceService.ResolveDeviceIP(m.UDN)
 			if err != nil || ip == "" {
 				result.Success = false
 				result.Error = "failed to resolve device IP"
@@ -232,8 +232,8 @@ func (s *Service) executeOnMembers(scene *Scene, fn func(ip string) error) ([]De
 }
 
 // IsLocked checks if a coordinator is currently locked.
-func (s *Service) IsLocked(deviceID string) bool {
-	return s.lock.IsLocked(deviceID)
+func (s *Service) IsLocked(udn string) bool {
+	return s.lock.IsLocked(udn)
 }
 
 // SceneNotFoundError is returned when a scene is not found.

@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 )
 
+// sonosNamespace is used for generating stable group IDs (home theater, stereo pairs)
+// These are internal identifiers for grouping logic, not exposed as device identifiers.
 const sonosNamespace = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
 
 var (
@@ -97,7 +99,7 @@ func NormalizeDevices(raw []RawSonosDevice, topology *ZoneGroupTopology) DeviceT
 		}
 
 		logicalDevices = append(logicalDevices, LogicalDevice{
-			DeviceID:             master.DeviceID,
+			UDN:                  master.UDN,
 			RoomName:             cleanRoomName(master.RoomName),
 			IP:                   master.IP,
 			Model:                master.Model,
@@ -117,7 +119,7 @@ func NormalizeDevices(raw []RawSonosDevice, topology *ZoneGroupTopology) DeviceT
 			lastSeen = pair.Right.LastSeenAt
 		}
 		logicalDevices = append(logicalDevices, LogicalDevice{
-			DeviceID:             pair.Coordinator.DeviceID,
+			UDN:                  pair.Coordinator.UDN,
 			RoomName:             pair.RoomName,
 			IP:                   pair.Coordinator.IP,
 			Model:                pair.Left.Model + " (Stereo Pair)",
@@ -140,7 +142,7 @@ func NormalizeDevices(raw []RawSonosDevice, topology *ZoneGroupTopology) DeviceT
 		isTargetable := !isStereoMember && device.Role == DeviceRoleNormal && device.IsCoordinatorCapable
 
 		logicalDevices = append(logicalDevices, LogicalDevice{
-			DeviceID:             device.DeviceID,
+			UDN:                  device.UDN,
 			RoomName:             device.RoomName,
 			IP:                   device.IP,
 			Model:                device.Model,
@@ -197,11 +199,7 @@ func createPhysicalDevice(raw RawSonosDevice) PhysicalDevice {
 		role = DeviceRoleSub
 	}
 
-	namespace := uuid.MustParse(sonosNamespace)
-	deviceID := uuid.NewSHA1(namespace, []byte(raw.UDN)).String()
-
 	return PhysicalDevice{
-		DeviceID:             deviceID,
 		UDN:                  raw.UDN,
 		IP:                   raw.IP,
 		Model:                raw.Model,

@@ -1,6 +1,17 @@
 package devices
 
-import "time"
+import (
+	"regexp"
+	"time"
+)
+
+// UDN validation pattern: RINCON_ followed by uppercase alphanumeric characters
+var udnPattern = regexp.MustCompile(`^RINCON_[A-Z0-9]+$`)
+
+// ValidateUDN checks if the given string is a valid Sonos UDN format.
+func ValidateUDN(udn string) bool {
+	return udnPattern.MatchString(udn)
+}
 
 // DeviceRole matches the shared enum values.
 type DeviceRole string
@@ -45,8 +56,7 @@ type RawSonosDevice struct {
 
 // PhysicalDevice is a single Sonos speaker.
 type PhysicalDevice struct {
-	DeviceID             string
-	UDN                  string
+	UDN                  string // Primary identifier (e.g., RINCON_B8E9375677C801400)
 	IP                   string
 	Model                string
 	ModelNumber          string
@@ -62,7 +72,7 @@ type PhysicalDevice struct {
 
 // LogicalDevice is the targetable entity.
 type LogicalDevice struct {
-	DeviceID             string
+	UDN                  string // Primary identifier (from first physical device)
 	RoomName             string
 	IP                   string
 	Model                string

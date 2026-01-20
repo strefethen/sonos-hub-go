@@ -5,27 +5,21 @@ import (
 	"strings"
 )
 
-func findDevice(devices []LogicalDevice, logger *log.Logger, deviceID string) *LogicalDevice {
+// findDevice looks up a device by UDN or room name.
+// The lookup order is: UDN → room_name (case-insensitive fallback)
+func findDevice(devices []LogicalDevice, logger *log.Logger, identifier string) *LogicalDevice {
+	// First, try to find by UDN (primary identifier)
 	for _, device := range devices {
-		if device.DeviceID == deviceID {
+		if device.UDN == identifier {
 			copy := device
 			return &copy
 		}
 	}
 
+	// Fallback: try room name (case-insensitive)
 	for _, device := range devices {
-		if len(device.PhysicalDevices) == 0 {
-			continue
-		}
-		if device.PhysicalDevices[0].UDN == deviceID {
-			copy := device
-			return &copy
-		}
-	}
-
-	for _, device := range devices {
-		if strings.EqualFold(device.RoomName, deviceID) {
-			logger.Printf("Device found by room name fallback: requested=%s found=%s", deviceID, device.DeviceID)
+		if strings.EqualFold(device.RoomName, identifier) {
+			logger.Printf("Device found by room name fallback: requested=%s found=%s", identifier, device.UDN)
 			copy := device
 			return &copy
 		}

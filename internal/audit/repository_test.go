@@ -50,7 +50,7 @@ func TestRepository_InsertEvent(t *testing.T) {
 	require.Equal(t, "routine-456", *event.RoutineID)
 	require.Nil(t, event.JobID)
 	require.Nil(t, event.SceneExecutionID)
-	require.Nil(t, event.DeviceID)
+	require.Nil(t, event.UDN)
 	require.Equal(t, "Routine execution started", event.Message)
 	require.Equal(t, "scene-789", event.Payload["scene_id"])
 	require.False(t, event.Timestamp.IsZero())
@@ -399,7 +399,7 @@ func TestRepository_InsertEvent_AllCorrelationFields(t *testing.T) {
 	routineID := "routine-456"
 	jobID := "job-789"
 	sceneExecID := "scene-exec-abc"
-	deviceID := "device-xyz"
+	udn := "RINCON_TEST123456789"
 
 	input := WriteEventInput{
 		Type:             string(EventJobCompleted),
@@ -407,7 +407,7 @@ func TestRepository_InsertEvent_AllCorrelationFields(t *testing.T) {
 		RoutineID:        &routineID,
 		JobID:            &jobID,
 		SceneExecutionID: &sceneExecID,
-		DeviceID:         &deviceID,
+		UDN:              &udn,
 		Message:          "All fields populated",
 	}
 
@@ -422,8 +422,8 @@ func TestRepository_InsertEvent_AllCorrelationFields(t *testing.T) {
 	require.Equal(t, "job-789", *event.JobID)
 	require.NotNil(t, event.SceneExecutionID)
 	require.Equal(t, "scene-exec-abc", *event.SceneExecutionID)
-	require.NotNil(t, event.DeviceID)
-	require.Equal(t, "device-xyz", *event.DeviceID)
+	require.NotNil(t, event.UDN)
+	require.Equal(t, "RINCON_TEST123456789", *event.UDN)
 }
 
 func TestRepository_QueryEvents_EmptyResult(t *testing.T) {
@@ -440,25 +440,25 @@ func TestRepository_QueryEvents_MultipleFilters(t *testing.T) {
 	repo := setupTestDB(t)
 
 	routineID := "routine-123"
-	deviceID := "device-456"
-	otherDevice := "device-789"
+	udn := "RINCON_TEST123456789"
+	otherUDN := "RINCON_TEST987654321"
 	errorLevel := EventLevelError
 	infoLevel := EventLevelInfo
 	eventType := string(EventJobFailed)
 
 	// Create events with different combinations
-	_, err := repo.InsertEvent(WriteEventInput{Type: eventType, RoutineID: &routineID, DeviceID: &deviceID, Level: &errorLevel, Message: "M1"})
+	_, err := repo.InsertEvent(WriteEventInput{Type: eventType, RoutineID: &routineID, UDN: &udn, Level: &errorLevel, Message: "M1"})
 	require.NoError(t, err)
-	_, err = repo.InsertEvent(WriteEventInput{Type: eventType, RoutineID: &routineID, DeviceID: &deviceID, Level: &infoLevel, Message: "M2"})
+	_, err = repo.InsertEvent(WriteEventInput{Type: eventType, RoutineID: &routineID, UDN: &udn, Level: &infoLevel, Message: "M2"})
 	require.NoError(t, err)
-	_, err = repo.InsertEvent(WriteEventInput{Type: eventType, RoutineID: &routineID, DeviceID: &otherDevice, Level: &errorLevel, Message: "M3"})
+	_, err = repo.InsertEvent(WriteEventInput{Type: eventType, RoutineID: &routineID, UDN: &otherUDN, Level: &errorLevel, Message: "M3"})
 	require.NoError(t, err)
 
 	// Filter by multiple criteria
 	events, total, err := repo.QueryEvents(EventQueryFilters{
 		Type:      &eventType,
 		RoutineID: &routineID,
-		DeviceID:  &deviceID,
+		UDN:       &udn,
 		Level:     &errorLevel,
 	})
 	require.NoError(t, err)

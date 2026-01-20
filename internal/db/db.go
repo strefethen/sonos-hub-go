@@ -160,6 +160,56 @@ func runMigrations(db *sql.DB) error {
 		return err
 	}
 
+	// Add template visual fields if missing
+	templatesColumns, err := tableColumns(db, "routine_templates")
+	if err != nil {
+		return err
+	}
+
+	if !templatesColumns["icon"] {
+		if _, err := db.Exec("ALTER TABLE routine_templates ADD COLUMN icon TEXT"); err != nil {
+			return fmt.Errorf("add routine_templates.icon: %w", err)
+		}
+	}
+	if !templatesColumns["image_name"] {
+		if _, err := db.Exec("ALTER TABLE routine_templates ADD COLUMN image_name TEXT"); err != nil {
+			return fmt.Errorf("add routine_templates.image_name: %w", err)
+		}
+	}
+	if !templatesColumns["gradient_color_1"] {
+		if _, err := db.Exec("ALTER TABLE routine_templates ADD COLUMN gradient_color_1 TEXT"); err != nil {
+			return fmt.Errorf("add routine_templates.gradient_color_1: %w", err)
+		}
+	}
+	if !templatesColumns["gradient_color_2"] {
+		if _, err := db.Exec("ALTER TABLE routine_templates ADD COLUMN gradient_color_2 TEXT"); err != nil {
+			return fmt.Errorf("add routine_templates.gradient_color_2: %w", err)
+		}
+	}
+	if !templatesColumns["accent_color"] {
+		if _, err := db.Exec("ALTER TABLE routine_templates ADD COLUMN accent_color TEXT"); err != nil {
+			return fmt.Errorf("add routine_templates.accent_color: %w", err)
+		}
+	}
+
+	// Add artwork_url and display_name columns to set_items for existing databases
+	setItemsColumns, err := tableColumns(db, "set_items")
+	if err != nil {
+		return err
+	}
+
+	if !setItemsColumns["artwork_url"] {
+		if _, err := db.Exec("ALTER TABLE set_items ADD COLUMN artwork_url TEXT"); err != nil {
+			return fmt.Errorf("add set_items.artwork_url: %w", err)
+		}
+	}
+
+	if !setItemsColumns["display_name"] {
+		if _, err := db.Exec("ALTER TABLE set_items ADD COLUMN display_name TEXT"); err != nil {
+			return fmt.Errorf("add set_items.display_name: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -190,13 +240,13 @@ func tableColumns(db *sql.DB, table string) (map[string]bool, error) {
 }
 
 type sceneMember struct {
-	DeviceID     string `json:"device_id"`
+	UDN          string `json:"udn"`
 	TargetVolume *int   `json:"target_volume"`
 }
 
 type speaker struct {
-	DeviceID string `json:"device_id"`
-	Volume   *int   `json:"volume"`
+	UDN    string `json:"udn"`
+	Volume *int   `json:"volume"`
 }
 
 func backfillSpeakersJSON(db *sql.DB) error {
@@ -261,7 +311,7 @@ func backfillSpeakersJSON(db *sql.DB) error {
 
 		speakers := make([]speaker, 0, len(members))
 		for _, m := range members {
-			speakers = append(speakers, speaker{DeviceID: m.DeviceID, Volume: m.TargetVolume})
+			speakers = append(speakers, speaker{UDN: m.UDN, Volume: m.TargetVolume})
 		}
 
 		payload, err := json.Marshal(speakers)

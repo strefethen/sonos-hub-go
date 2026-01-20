@@ -3,6 +3,7 @@ package system
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"runtime"
 	"time"
@@ -301,7 +302,7 @@ func (s *Service) GetDashboardData() (*DashboardData, error) {
 	return dashboard, nil
 }
 
-// buildDeviceRoomMap creates a map of device_id -> room_name from the device service.
+// buildDeviceRoomMap creates a map of udn -> room_name from the device service.
 // NON-BLOCKING: Returns empty map if topology not yet cached.
 func (s *Service) buildDeviceRoomMap() map[string]string {
 	deviceRoomMap := make(map[string]string)
@@ -310,7 +311,7 @@ func (s *Service) buildDeviceRoomMap() map[string]string {
 		topology := s.deviceService.GetTopologyIfCached()
 		if topology != nil {
 			for _, device := range topology.Devices {
-				deviceRoomMap[device.DeviceID] = device.RoomName
+				deviceRoomMap[device.UDN] = device.RoomName
 			}
 		}
 	}
@@ -326,7 +327,7 @@ func (s *Service) extractRoomNamesFromScene(sceneID string, deviceRoomMap map[st
 	}
 
 	var members []struct {
-		DeviceID string `json:"device_id"`
+		UDN      string `json:"udn"`
 		RoomName string `json:"room_name,omitempty"`
 	}
 
@@ -344,7 +345,7 @@ func (s *Service) extractRoomNamesFromScene(sceneID string, deviceRoomMap map[st
 			roomName = member.RoomName
 		} else if deviceRoomMap != nil {
 			// Fall back to device registry lookup
-			roomName = deviceRoomMap[member.DeviceID]
+			roomName = deviceRoomMap[member.UDN]
 		}
 		if roomName != "" && !seen[roomName] {
 			rooms = append(rooms, roomName)
@@ -358,7 +359,7 @@ func (s *Service) extractRoomNamesFromScene(sceneID string, deviceRoomMap map[st
 // extractRoomNamesWithDeviceMap extracts room names using device registry lookup.
 func (s *Service) extractRoomNamesWithDeviceMap(speakersJSON string, deviceRoomMap map[string]string) []string {
 	var speakers []struct {
-		DeviceID string `json:"device_id"`
+		UDN      string `json:"udn"`
 		RoomName string `json:"room_name,omitempty"`
 	}
 
@@ -376,7 +377,7 @@ func (s *Service) extractRoomNamesWithDeviceMap(speakersJSON string, deviceRoomM
 			roomName = speaker.RoomName
 		} else if deviceRoomMap != nil {
 			// Fall back to device registry lookup
-			roomName = deviceRoomMap[speaker.DeviceID]
+			roomName = deviceRoomMap[speaker.UDN]
 		}
 		if roomName != "" && !seen[roomName] {
 			rooms = append(rooms, roomName)
@@ -427,8 +428,8 @@ func (s *Service) checkAttentionItems() []AttentionItem {
 			Severity: "error",
 			Message:  "Some routines failed to execute",
 			Details: map[string]any{
-				"failed_count":   failedJobCount,
-				"time_window":    "24 hours",
+				"failed_count": fmt.Sprintf("%d", failedJobCount),
+				"time_window":  "24 hours",
 			},
 			ResolveHint: "Review job execution history for details",
 		})

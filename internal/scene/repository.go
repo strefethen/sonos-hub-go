@@ -364,7 +364,7 @@ func (r *ExecutionsRepository) Create(input CreateExecutionInput) (*SceneExecuti
 // GetByID retrieves an execution by ID.
 func (r *ExecutionsRepository) GetByID(execID string) (*SceneExecution, error) {
 	row := r.reader.QueryRow(`
-		SELECT scene_execution_id, scene_id, idempotency_key, coordinator_used_device_id, status, started_at, ended_at, steps, verification, error
+		SELECT scene_execution_id, scene_id, idempotency_key, coordinator_used_udn, status, started_at, ended_at, steps, verification, error
 		FROM scene_executions
 		WHERE scene_execution_id = ?
 	`, execID)
@@ -375,7 +375,7 @@ func (r *ExecutionsRepository) GetByID(execID string) (*SceneExecution, error) {
 // GetByIdempotencyKey retrieves an execution by idempotency key.
 func (r *ExecutionsRepository) GetByIdempotencyKey(key string) (*SceneExecution, error) {
 	row := r.reader.QueryRow(`
-		SELECT scene_execution_id, scene_id, idempotency_key, coordinator_used_device_id, status, started_at, ended_at, steps, verification, error
+		SELECT scene_execution_id, scene_id, idempotency_key, coordinator_used_udn, status, started_at, ended_at, steps, verification, error
 		FROM scene_executions
 		WHERE idempotency_key = ?
 	`, key)
@@ -392,7 +392,7 @@ func (r *ExecutionsRepository) ListBySceneID(sceneID string, limit, offset int) 
 	}
 
 	rows, err := r.reader.Query(`
-		SELECT scene_execution_id, scene_id, idempotency_key, coordinator_used_device_id, status, started_at, ended_at, steps, verification, error
+		SELECT scene_execution_id, scene_id, idempotency_key, coordinator_used_udn, status, started_at, ended_at, steps, verification, error
 		FROM scene_executions
 		WHERE scene_id = ?
 		ORDER BY started_at DESC
@@ -486,13 +486,13 @@ func (r *ExecutionsRepository) UpdateStep(execID, stepName string, update StepUp
 	return tx.Commit()
 }
 
-// SetCoordinator sets the coordinator device ID.
-func (r *ExecutionsRepository) SetCoordinator(execID, deviceID string) error {
+// SetCoordinator sets the coordinator UDN.
+func (r *ExecutionsRepository) SetCoordinator(execID, udn string) error {
 	_, err := r.writer.Exec(`
 		UPDATE scene_executions
-		SET coordinator_used_device_id = ?
+		SET coordinator_used_udn = ?
 		WHERE scene_execution_id = ?
-	`, deviceID, execID)
+	`, udn, execID)
 	return err
 }
 
@@ -585,7 +585,7 @@ func (r *ExecutionsRepository) parseExecution(exec *SceneExecution, idempotencyK
 		exec.IdempotencyKey = &idempotencyKey.String
 	}
 	if coordinator.Valid {
-		exec.CoordinatorUsedDeviceID = &coordinator.String
+		exec.CoordinatorUsedUDN = &coordinator.String
 	}
 
 	exec.Status = ExecutionStatus(status)

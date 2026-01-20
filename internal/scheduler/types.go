@@ -57,11 +57,41 @@ type Schedule struct {
 	RunAt           *time.Time   `json:"run_at,omitempty"`
 }
 
-// MusicPolicy defines playback preferences for a routine (API model).
+// MusicPolicy defines the music selection policy for a routine (API model).
+// This matches the structure iOS sends for music_policy in create/update requests.
 type MusicPolicy struct {
-	ShuffleMode     *string `json:"shuffle_mode,omitempty"`
-	RepeatMode      *string `json:"repeat_mode,omitempty"`
-	PreferredSource *string `json:"preferred_source,omitempty"`
+	// Policy type: "FIXED", "ROTATION", "SHUFFLE"
+	Type string `json:"type,omitempty"`
+
+	// For FIXED policy with Sonos favorites
+	SonosFavoriteID            *string `json:"sonos_favorite_id,omitempty"`
+	SonosFavoriteName          *string `json:"sonos_favorite_name,omitempty"`
+	SonosFavoriteArtworkUrl    *string `json:"sonos_favorite_artwork_url,omitempty"`
+	SonosFavoriteServiceLogoUrl *string `json:"sonos_favorite_service_logo_url,omitempty"`
+	SonosFavoriteServiceName   *string `json:"sonos_favorite_service_name,omitempty"`
+
+	// Direct content for Apple Music/Spotify playback
+	MusicContent *MusicContentAPI `json:"music_content,omitempty"`
+
+	// For ROTATION/SHUFFLE policy with music sets
+	SetID                   *string `json:"set_id,omitempty"`
+	NoRepeatWindow          *int    `json:"no_repeat_window,omitempty"`
+	NoRepeatWindowMinutes   *int    `json:"no_repeat_window_minutes,omitempty"`
+	FallbackBehavior        *string `json:"fallback_behavior,omitempty"`
+}
+
+// MusicContentAPI represents direct music content for API serialization.
+type MusicContentAPI struct {
+	Type        string  `json:"type"`                    // "direct" or "sonos_favorite"
+	Service     *string `json:"service,omitempty"`       // "spotify", "apple_music"
+	ContentType *string `json:"content_type,omitempty"`
+	ContentID   *string `json:"content_id,omitempty"`
+	Title       *string `json:"title,omitempty"`
+	ArtworkUrl  *string `json:"artwork_url,omitempty"`
+	FavoriteID  *string `json:"favorite_id,omitempty"`   // For sonos_favorite type
+	Name        *string `json:"name,omitempty"`          // Display name
+	ServiceLogoUrl *string `json:"service_logo_url,omitempty"`
+	ServiceName *string `json:"service_name,omitempty"`
 }
 
 // ==========================================================================
@@ -226,4 +256,11 @@ type CreateHolidayInputAPI struct {
 	Name      string    `json:"name"`
 	Date      time.Time `json:"date"`
 	Recurring bool      `json:"recurring"`
+}
+
+// SpeakerInput represents a speaker configuration from iOS.
+// This is used in routine creation/update requests from the iOS app.
+type SpeakerInput struct {
+	UDN    string `json:"udn"`
+	Volume int    `json:"volume"`
 }

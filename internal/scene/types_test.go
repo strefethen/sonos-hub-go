@@ -13,7 +13,7 @@ func TestSceneMemberJSON(t *testing.T) {
 	mute := false
 
 	member := SceneMember{
-		DeviceID:     "device-123",
+		UDN:          "RINCON_TEST123456789",
 		RoomName:     "Living Room",
 		TargetVolume: &volume,
 		Mute:         &mute,
@@ -25,7 +25,7 @@ func TestSceneMemberJSON(t *testing.T) {
 	var decoded SceneMember
 	require.NoError(t, json.Unmarshal(data, &decoded))
 
-	require.Equal(t, member.DeviceID, decoded.DeviceID)
+	require.Equal(t, member.UDN, decoded.UDN)
 	require.Equal(t, member.RoomName, decoded.RoomName)
 	require.NotNil(t, decoded.TargetVolume)
 	require.Equal(t, 50, *decoded.TargetVolume)
@@ -35,7 +35,7 @@ func TestSceneMemberJSON(t *testing.T) {
 
 func TestSceneMemberJSONOmitsEmpty(t *testing.T) {
 	member := SceneMember{
-		DeviceID: "device-123",
+		UDN: "RINCON_TEST123456789",
 	}
 
 	data, err := json.Marshal(member)
@@ -44,7 +44,7 @@ func TestSceneMemberJSONOmitsEmpty(t *testing.T) {
 	var m map[string]any
 	require.NoError(t, json.Unmarshal(data, &m))
 
-	require.Equal(t, "device-123", m["device_id"])
+	require.Equal(t, "RINCON_TEST123456789", m["udn"])
 	_, hasRoomName := m["room_name"]
 	require.False(t, hasRoomName)
 	_, hasVolume := m["target_volume"]
@@ -103,8 +103,8 @@ func TestSceneJSON(t *testing.T) {
 		CoordinatorPreference: string(CoordinatorPreferenceArcFirst),
 		FallbackPolicy:        string(FallbackPolicyPlaybaseIfArcTVActive),
 		Members: []SceneMember{
-			{DeviceID: "device-1", TargetVolume: &volume},
-			{DeviceID: "device-2", RoomName: "Kitchen"},
+			{UDN: "RINCON_TEST001", TargetVolume: &volume},
+			{UDN: "RINCON_TEST002", RoomName: "Kitchen"},
 		},
 		VolumeRamp: &VolumeRamp{Enabled: false},
 		Teardown:   nil,
@@ -188,16 +188,16 @@ func TestSceneExecutionJSON(t *testing.T) {
 	errMsg := "test error"
 
 	execution := SceneExecution{
-		SceneExecutionID:        "exec-123",
-		SceneID:                 "scene-123",
-		IdempotencyKey:          &idempotencyKey,
-		CoordinatorUsedDeviceID: &coordinator,
-		Status:                  ExecutionStatusFailed,
-		StartedAt:               now,
-		EndedAt:                 &endedAt,
-		Steps:                   DefaultExecutionSteps(),
-		Verification:            nil,
-		Error:                   &errMsg,
+		SceneExecutionID:    "exec-123",
+		SceneID:             "scene-123",
+		IdempotencyKey:      &idempotencyKey,
+		CoordinatorUsedUDN:  &coordinator,
+		Status:              ExecutionStatusFailed,
+		StartedAt:           now,
+		EndedAt:             &endedAt,
+		Steps:               DefaultExecutionSteps(),
+		Verification:        nil,
+		Error:               &errMsg,
 	}
 
 	data, err := json.Marshal(execution)
@@ -210,8 +210,8 @@ func TestSceneExecutionJSON(t *testing.T) {
 	require.Equal(t, "scene-123", decoded.SceneID)
 	require.NotNil(t, decoded.IdempotencyKey)
 	require.Equal(t, "idem-123", *decoded.IdempotencyKey)
-	require.NotNil(t, decoded.CoordinatorUsedDeviceID)
-	require.Equal(t, "device-123", *decoded.CoordinatorUsedDeviceID)
+	require.NotNil(t, decoded.CoordinatorUsedUDN)
+	require.Equal(t, "device-123", *decoded.CoordinatorUsedUDN)
 	require.Equal(t, ExecutionStatusFailed, decoded.Status)
 	require.NotNil(t, decoded.EndedAt)
 	require.Len(t, decoded.Steps, 8)
@@ -288,9 +288,9 @@ func TestExecuteOptionsJSON(t *testing.T) {
 
 func TestDeviceResultJSON(t *testing.T) {
 	result := DeviceResult{
-		DeviceID: "device-123",
-		Success:  false,
-		Error:    "connection timeout",
+		UDN:     "RINCON_TEST123456789",
+		Success: false,
+		Error:   "connection timeout",
 	}
 
 	data, err := json.Marshal(result)
@@ -299,7 +299,7 @@ func TestDeviceResultJSON(t *testing.T) {
 	var decoded DeviceResult
 	require.NoError(t, json.Unmarshal(data, &decoded))
 
-	require.Equal(t, "device-123", decoded.DeviceID)
+	require.Equal(t, "RINCON_TEST123456789", decoded.UDN)
 	require.False(t, decoded.Success)
 	require.Equal(t, "connection timeout", decoded.Error)
 }

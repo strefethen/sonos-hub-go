@@ -39,10 +39,6 @@ func mergeTopologies(newTopo DeviceTopology, existing *DeviceTopology) DeviceTop
 		}
 		processed[udn] = struct{}{}
 
-		existingDevice, ok := existingDeviceByUDN[udn]
-		if ok {
-			device.DeviceID = existingDevice.DeviceID
-		}
 		device.Health = DeviceHealthOK
 		device.MissedScans = 0
 		device.PhysicalDevices = resetPhysicalHealth(device.PhysicalDevices, DeviceHealthOK, 0)
@@ -62,7 +58,7 @@ func mergeTopologies(newTopo DeviceTopology, existing *DeviceTopology) DeviceTop
 		health := computeHealth(missed)
 
 		if missed >= RemovalThreshold {
-			log.Printf("Removing device after missed scans: %s (%s)", device.DeviceID, device.RoomName)
+			log.Printf("Removing device after missed scans: %s (%s)", device.UDN, device.RoomName)
 			continue
 		}
 
