@@ -3,12 +3,14 @@ package sonoscloud
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/strefethen/sonos-hub-go/internal/api"
 	"github.com/strefethen/sonos-hub-go/internal/apperrors"
+	"github.com/strefethen/sonos-hub-go/internal/sonos/events"
 )
 
 // RegisterRoutes wires Sonos Cloud routes to the router.
@@ -278,4 +280,146 @@ func handleAPIError(err error) error {
 	}
 
 	return apperrors.NewInternalError("Sonos Cloud API request failed")
+}
+
+// WebhookEvent represents a Sonos Cloud webhook event.
+type WebhookEvent struct {
+	Type      string          `json:"type"`      // playbackStatus, metadataStatus, volume, etc.
+	GroupID   string          `json:"groupId"`   // Sonos group ID
+	HouseholdID string        `json:"householdId"`
+	Data      json.RawMessage `json:"data"`      // Event-specific data
+}
+
+// PlaybackStatusData represents playback status webhook data.
+type PlaybackStatusData struct {
+	PlaybackState string `json:"playbackState"` // PLAYING, PAUSED_PLAYBACK, IDLE
+}
+
+// VolumeData represents volume webhook data.
+type VolumeData struct {
+	Volume int  `json:"volume"` // 0-100
+	Muted  bool `json:"muted"`
+}
+
+// MetadataStatusData represents metadata webhook data.
+type MetadataStatusData struct {
+	Container *struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+	} `json:"container"`
+	CurrentItem *struct {
+		Track *struct {
+			Name   string `json:"name"`
+			Artist *struct {
+				Name string `json:"name"`
+			} `json:"artist"`
+			Album *struct {
+				Name string `json:"name"`
+			} `json:"album"`
+			ImageURL string `json:"imageUrl"`
+		} `json:"track"`
+	} `json:"currentItem"`
+}
+
+// GroupToIPResolver resolves a Sonos Cloud group ID to a device IP.
+// This is needed because Cloud webhooks identify groups by groupId, not IP.
+type GroupToIPResolver interface {
+	ResolveGroupToIP(groupID string) (string, error)
+}
+
+// RegisterWebhookRoute registers the webhook endpoint with StateCache.
+// This is separate from RegisterRoutes because the webhook doesn't require
+// OAuth authentication - it's called by Sonos servers.
+func RegisterWebhookRoute(router chi.Router, stateCache *events.StateCache, resolver GroupToIPResolver) {
+	router.Method(http.MethodPost, "/v1/sonos-cloud/webhook", api.Handler(handleWebhook(stateCache, resolver)))
+}
+
+func handleWebhook(stateCache *events.StateCache, resolver GroupToIPResolver) func(w http.ResponseWriter, r *http.Request) error {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		var event WebhookEvent
+		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
+			return apperrors.NewValidationError("invalid webhook payload", nil)
+		}
+
+		log.Printf("WEBHOOK: Received %s event for group %s", event.Type, event.GroupID)
+
+		// Try to resolve group ID to IP for cache update
+		var deviceIP string
+		if resolver != nil && event.GroupID != "" {
+			ip, err := resolver.ResolveGroupToIP(event.GroupID)
+			if err == nil {
+				deviceIP = ip
+			} else {
+				log.Printf("WEBHOOK: Could not resolve group %s to IP: %v", event.GroupID, err)
+			}
+		}
+
+		// Process event based on type
+		switch event.Type {
+		case "playbackStatus":
+			var data PlaybackStatusData
+			if err := json.Unmarshal(event.Data, &data); err != nil {
+				log.Printf("WEBHOOK: Failed to parse playbackStatus data: %v", err)
+				break
+			}
+
+			if deviceIP != "" && stateCache != nil {
+				playback := &events.CloudPlaybackEvent{
+					PlaybackState: data.PlaybackState,
+				}
+				stateCache.UpdateFromCloud(deviceIP, playback, nil)
+				log.Printf("WEBHOOK: Updated cache for %s: state=%s", deviceIP, data.PlaybackState)
+			}
+
+		case "volume":
+			var data VolumeData
+			if err := json.Unmarshal(event.Data, &data); err != nil {
+				log.Printf("WEBHOOK: Failed to parse volume data: %v", err)
+				break
+			}
+
+			if deviceIP != "" && stateCache != nil {
+				playback := &events.CloudPlaybackEvent{
+					Volume: &data.Volume,
+					Muted:  &data.Muted,
+				}
+				stateCache.UpdateFromCloud(deviceIP, playback, nil)
+				log.Printf("WEBHOOK: Updated cache for %s: volume=%d, muted=%v", deviceIP, data.Volume, data.Muted)
+			}
+
+		case "metadataStatus":
+			var data MetadataStatusData
+			if err := json.Unmarshal(event.Data, &data); err != nil {
+				log.Printf("WEBHOOK: Failed to parse metadataStatus data: %v", err)
+				break
+			}
+
+			if deviceIP != "" && stateCache != nil && data.CurrentItem != nil && data.CurrentItem.Track != nil {
+				track := data.CurrentItem.Track
+				metadata := &events.CloudMetadataEvent{
+					TrackName:   track.Name,
+					AlbumArtURI: track.ImageURL,
+				}
+				if track.Artist != nil {
+					metadata.ArtistName = track.Artist.Name
+				}
+				if track.Album != nil {
+					metadata.AlbumName = track.Album.Name
+				}
+				stateCache.UpdateFromCloud(deviceIP, nil, metadata)
+				log.Printf("WEBHOOK: Updated cache for %s: track=%s", deviceIP, track.Name)
+			}
+
+		default:
+			log.Printf("WEBHOOK: Unhandled event type: %s", event.Type)
+		}
+
+		// Always return success to acknowledge the webhook
+		return api.WriteAction(w, http.StatusOK, map[string]any{
+			"object":   "webhook_ack",
+			"received": true,
+			"type":     event.Type,
+			"group_id": event.GroupID,
+		})
+	}
 }

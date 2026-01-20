@@ -10,19 +10,23 @@ import (
 )
 
 var publicRoutes = map[string]struct{}{
-	"/v1/auth/pair/start":    {},
-	"/v1/auth/pair/complete": {},
-	"/v1/auth/refresh":       {},
-	"/v1/health":             {},
-	"/v1/health/live":        {},
-	"/v1/health/ready":       {},
-	"/metrics":               {},
+	"/v1/auth/pair/start":              {},
+	"/v1/auth/pair/complete":           {},
+	"/v1/auth/refresh":                 {},
+	"/v1/health":                       {},
+	"/v1/health/live":                  {},
+	"/v1/health/ready":                 {},
+	"/metrics":                         {},
+	"/ws/spotify-search":               {},
+	"/v1/sonos-cloud/webhook":          {}, // Sonos Cloud webhooks from Sonos servers
+	"/v1/sonos-cloud/auth/callback":    {}, // OAuth callback from Sonos
 }
 
 var publicPrefixes = []string{
 	"/v1/health",
 	"/v1/assets",
 	"/v1/openapi",
+	"/upnp", // UPnP NOTIFY callbacks from Sonos devices
 }
 
 // Middleware validates JWT tokens for protected routes.
