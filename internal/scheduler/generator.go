@@ -254,14 +254,16 @@ func (g *JobGenerator) GenerateJobForRoutine(routine *Routine, now time.Time) (*
 		return nil, nil
 	}
 
-	// Generate idempotency key
-	scheduledForStr := scheduledFor.UTC().Format(time.RFC3339)
+	// Generate idempotency key with truncated timestamp for consistency
+	// This prevents duplicates caused by different timestamp formats
+	scheduledForTrunc := scheduledFor.UTC().Truncate(time.Second)
+	scheduledForStr := scheduledForTrunc.Format(time.RFC3339)
 	idempotencyKey := fmt.Sprintf("%s:%s", routine.RoutineID, scheduledForStr)
 
 	// Create the job using the repository
 	input := CreateJobInput{
 		RoutineID:      routine.RoutineID,
-		ScheduledFor:   *scheduledFor,
+		ScheduledFor:   scheduledForTrunc,
 		IdempotencyKey: &idempotencyKey,
 	}
 

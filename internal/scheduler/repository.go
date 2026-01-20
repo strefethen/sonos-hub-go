@@ -287,12 +287,15 @@ func (r *RoutinesRepository) parseRoutine(routine *Routine, enabled int, weekday
 		}
 	}
 
-	if snoozeUntil.Valid {
+	if snoozeUntil.Valid && snoozeUntil.String != "" {
 		t, err := time.Parse(time.RFC3339, snoozeUntil.String)
 		if err != nil {
-			t, _ = time.Parse("2006-01-02 15:04:05", snoozeUntil.String)
+			t, err = time.Parse("2006-01-02 15:04:05", snoozeUntil.String)
 		}
-		routine.SnoozeUntil = &t
+		// Only set if parse succeeded and time is not zero
+		if err == nil && !t.IsZero() {
+			routine.SnoozeUntil = &t
+		}
 	}
 
 	// Parse additional music configuration fields
@@ -890,7 +893,10 @@ func (r *JobsRepository) Create(input CreateJobInput) (*Job, error) {
 func (r *JobsRepository) CreateWithInput(input CreateJobInput) (*Job, error) {
 	jobID := uuid.New().String()
 	now := time.Now().UTC().Format(time.RFC3339)
-	scheduledForStr := input.ScheduledFor.UTC().Format(time.RFC3339)
+	// Truncate to seconds to ensure consistent timestamp format and prevent duplicates
+	// caused by different timestamp formats (e.g., "2006-01-02T15:04:05Z" vs "2006-01-02T15:04:05.000Z")
+	scheduledForTrunc := input.ScheduledFor.UTC().Truncate(time.Second)
+	scheduledForStr := scheduledForTrunc.Format(time.RFC3339)
 
 	idempotencyKey := input.IdempotencyKey
 	if idempotencyKey == nil {

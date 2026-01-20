@@ -18,10 +18,10 @@ import (
 )
 
 // ==========================================================================
-// Mock SceneExecutor
+// Mock RoutineExecutor
 // ==========================================================================
 
-type mockSceneExecutor struct {
+type mockRoutineExecutor struct {
 	mu             sync.Mutex
 	executions     []*scene.SceneExecution
 	executionCount int
@@ -31,20 +31,20 @@ type mockSceneExecutor struct {
 	dbPair         *db.DBPair // For creating real scene executions
 }
 
-func newMockSceneExecutor() *mockSceneExecutor {
-	return &mockSceneExecutor{
+func newMockRoutineExecutor() *mockRoutineExecutor {
+	return &mockRoutineExecutor{
 		executions: make([]*scene.SceneExecution, 0),
 	}
 }
 
-func newMockSceneExecutorWithDB(dbPair *db.DBPair) *mockSceneExecutor {
-	return &mockSceneExecutor{
+func newMockRoutineExecutorWithDB(dbPair *db.DBPair) *mockRoutineExecutor {
+	return &mockRoutineExecutor{
 		executions: make([]*scene.SceneExecution, 0),
 		dbPair:     dbPair,
 	}
 }
 
-func (m *mockSceneExecutor) ExecuteScene(sceneID string, idempotencyKey *string, options scene.ExecuteOptions) (*scene.SceneExecution, error) {
+func (m *mockRoutineExecutor) ExecuteRoutine(routine *Routine, idempotencyKey *string) (*scene.SceneExecution, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -57,7 +57,7 @@ func (m *mockSceneExecutor) ExecuteScene(sceneID string, idempotencyKey *string,
 	}
 
 	m.executionCount++
-	execID := "exec-" + sceneID + "-" + time.Now().Format("20060102150405.000000")
+	execID := "exec-" + routine.SceneID + "-" + time.Now().Format("20060102150405.000000")
 	now := time.Now().UTC().Format("2006-01-02T15:04:05Z07:00")
 
 	// If we have a DB connection, insert a real scene_execution record
@@ -65,7 +65,7 @@ func (m *mockSceneExecutor) ExecuteScene(sceneID string, idempotencyKey *string,
 		_, err := m.dbPair.Writer().Exec(`
 			INSERT INTO scene_executions (scene_execution_id, scene_id, status, started_at, steps)
 			VALUES (?, ?, 'PLAYING_CONFIRMED', ?, '[]')
-		`, execID, sceneID, now)
+		`, execID, routine.SceneID, now)
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +73,7 @@ func (m *mockSceneExecutor) ExecuteScene(sceneID string, idempotencyKey *string,
 
 	execution := &scene.SceneExecution{
 		SceneExecutionID: execID,
-		SceneID:          sceneID,
+		SceneID:          routine.SceneID,
 		IdempotencyKey:   idempotencyKey,
 		Status:           scene.ExecutionStatusPlayingConfirmed,
 		StartedAt:        time.Now().UTC(),
@@ -82,14 +82,14 @@ func (m *mockSceneExecutor) ExecuteScene(sceneID string, idempotencyKey *string,
 	return execution, nil
 }
 
-func (m *mockSceneExecutor) setFailure(fail bool, err error) {
+func (m *mockRoutineExecutor) setFailure(fail bool, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.shouldFail = fail
 	m.failError = err
 }
 
-func (m *mockSceneExecutor) getExecutionCount() int {
+func (m *mockRoutineExecutor) getExecutionCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.executionCount
@@ -158,7 +158,7 @@ func TestNewJobRunner(t *testing.T) {
 
 	jobsRepo := NewJobsRepository(dbPair)
 	routinesRepo := NewRoutinesRepository(dbPair)
-	executor := newMockSceneExecutor()
+	executor := newMockRoutineExecutor()
 
 	t.Run("creates runner with default values", func(t *testing.T) {
 		runner := NewJobRunner(nil, jobsRepo, routinesRepo, executor, 0, 0)
@@ -184,7 +184,7 @@ func TestJobRunner_StartStop(t *testing.T) {
 
 	jobsRepo := NewJobsRepository(dbPair)
 	routinesRepo := NewRoutinesRepository(dbPair)
-	executor := newMockSceneExecutor()
+	executor := newMockRoutineExecutor()
 	logger := newTestLogger()
 
 	runner := NewJobRunner(logger, jobsRepo, routinesRepo, executor, 100*time.Millisecond, 3)
@@ -216,7 +216,7 @@ func TestJobRunner_ExecuteJob(t *testing.T) {
 
 	jobsRepo := NewJobsRepository(dbPair)
 	routinesRepo := NewRoutinesRepository(dbPair)
-	executor := newMockSceneExecutorWithDB(dbPair)
+	executor := newMockRoutineExecutorWithDB(dbPair)
 	logger := newTestLogger()
 
 	t.Run("executes a pending job successfully", func(t *testing.T) {
@@ -240,7 +240,7 @@ func TestJobRunner_ExecuteJob(t *testing.T) {
 	})
 
 	t.Run("does not execute future jobs", func(t *testing.T) {
-		executor2 := newMockSceneExecutor()
+		executor2 := newMockRoutineExecutor()
 		sceneID := createTestScene(t, dbPair)
 		routine := createTestRoutine(t, routinesRepo, sceneID)
 		_ = createTestJob(t, jobsRepo, routine.RoutineID, time.Now().UTC().Add(1*time.Hour))
@@ -262,7 +262,7 @@ func TestJobRunner_RetryLogic(t *testing.T) {
 
 	jobsRepo := NewJobsRepository(dbPair)
 	routinesRepo := NewRoutinesRepository(dbPair)
-	executor := newMockSceneExecutor()
+	executor := newMockRoutineExecutor()
 	logger := newTestLogger()
 
 	t.Run("retries failed job with exponential backoff", func(t *testing.T) {
@@ -322,7 +322,7 @@ func TestJobRunner_RecoverStaleJobs(t *testing.T) {
 
 	jobsRepo := NewJobsRepository(dbPair)
 	routinesRepo := NewRoutinesRepository(dbPair)
-	executor := newMockSceneExecutor()
+	executor := newMockRoutineExecutor()
 	logger := newTestLogger()
 
 	t.Run("recovers stale claimed jobs", func(t *testing.T) {
@@ -377,7 +377,7 @@ func TestJobRunner_RetryAfter(t *testing.T) {
 
 	jobsRepo := NewJobsRepository(dbPair)
 	routinesRepo := NewRoutinesRepository(dbPair)
-	executor := newMockSceneExecutor()
+	executor := newMockRoutineExecutor()
 	logger := newTestLogger()
 
 	t.Run("respects retry_after timestamp", func(t *testing.T) {
@@ -441,7 +441,7 @@ func TestJobRunner_MissingRoutine(t *testing.T) {
 
 	jobsRepo := NewJobsRepository(dbPair)
 	routinesRepo := NewRoutinesRepository(dbPair)
-	executor := newMockSceneExecutor()
+	executor := newMockRoutineExecutor()
 	logger := newTestLogger()
 
 	t.Run("job is deleted when routine is deleted via CASCADE", func(t *testing.T) {
@@ -477,7 +477,7 @@ func TestJobRunner_UpdateLastRunAt(t *testing.T) {
 
 	jobsRepo := NewJobsRepository(dbPair)
 	routinesRepo := NewRoutinesRepository(dbPair)
-	executor := newMockSceneExecutorWithDB(dbPair)
+	executor := newMockRoutineExecutorWithDB(dbPair)
 	logger := newTestLogger()
 
 	t.Run("updates routine last_run_at on success", func(t *testing.T) {
@@ -507,7 +507,7 @@ func TestJobRunner_IdempotencyKey(t *testing.T) {
 
 	jobsRepo := NewJobsRepository(dbPair)
 	routinesRepo := NewRoutinesRepository(dbPair)
-	executor := newMockSceneExecutorWithDB(dbPair)
+	executor := newMockRoutineExecutorWithDB(dbPair)
 	logger := newTestLogger()
 
 	t.Run("passes idempotency key to scene executor", func(t *testing.T) {

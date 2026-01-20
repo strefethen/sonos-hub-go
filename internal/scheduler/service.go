@@ -14,16 +14,16 @@ import (
 
 // Service provides scheduler management functionality.
 type Service struct {
-	cfg          config.Config
-	logger       *log.Logger
-	reader       *sql.DB // For ad-hoc read queries
-	writer       *sql.DB // For ad-hoc write queries
-	routinesRepo *RoutinesRepository
-	jobsRepo     *JobsRepository
-	holidaysRepo *HolidaysRepository
-	generator    *JobGenerator
-	runner       *JobRunner
-	sceneService SceneExecutor
+	cfg             config.Config
+	logger          *log.Logger
+	reader          *sql.DB // For ad-hoc read queries
+	writer          *sql.DB // For ad-hoc write queries
+	routinesRepo    *RoutinesRepository
+	jobsRepo        *JobsRepository
+	holidaysRepo    *HolidaysRepository
+	generator       *JobGenerator
+	runner          *JobRunner
+	routineExecutor RoutineExecutor
 
 	// Runner control
 	stopChan chan struct{}
@@ -38,7 +38,7 @@ func NewService(
 	cfg config.Config,
 	dbPair DBPair,
 	logger *log.Logger,
-	sceneService SceneExecutor,
+	routineExecutor RoutineExecutor,
 ) *Service {
 	if logger == nil {
 		logger = log.Default()
@@ -54,23 +54,23 @@ func NewService(
 		logger,
 		jobsRepo,
 		routinesRepo,
-		sceneService,
+		routineExecutor,
 		DefaultPollInterval,
 		DefaultMaxRetries,
 	)
 
 	return &Service{
-		cfg:          cfg,
-		logger:       logger,
-		reader:       dbPair.Reader(),
-		writer:       dbPair.Writer(),
-		routinesRepo: routinesRepo,
-		jobsRepo:     jobsRepo,
-		holidaysRepo: holidaysRepo,
-		generator:    generator,
-		runner:       runner,
-		sceneService: sceneService,
-		stopChan:     make(chan struct{}),
+		cfg:             cfg,
+		logger:          logger,
+		reader:          dbPair.Reader(),
+		writer:          dbPair.Writer(),
+		routinesRepo:    routinesRepo,
+		jobsRepo:        jobsRepo,
+		holidaysRepo:    holidaysRepo,
+		generator:       generator,
+		runner:          runner,
+		routineExecutor: routineExecutor,
+		stopChan:        make(chan struct{}),
 	}
 }
 
@@ -161,7 +161,7 @@ func (s *Service) runGenerationTicker() {
 // CreateRoutine creates a new routine.
 func (s *Service) CreateRoutine(input CreateRoutineInput) (*Routine, error) {
 	// Validate scene_id exists
-	if s.sceneService != nil {
+	if s.routineExecutor != nil {
 		sceneExists, err := s.validateSceneExists(input.SceneID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to validate scene: %w", err)
@@ -203,7 +203,7 @@ func (s *Service) UpdateRoutine(routineID string, input UpdateRoutineInput) (*Ro
 	}
 
 	// Validate scene_id if being updated
-	if input.SceneID != nil && s.sceneService != nil {
+	if input.SceneID != nil && s.routineExecutor != nil {
 		sceneExists, err := s.validateSceneExists(*input.SceneID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to validate scene: %w", err)

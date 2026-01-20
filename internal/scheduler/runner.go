@@ -48,14 +48,14 @@ type SceneExecutor interface {
 // - Retry logic with exponential backoff
 // - Recovery of stale claimed jobs after crashes
 type JobRunner struct {
-	logger       *log.Logger
-	jobsRepo     *JobsRepository
-	routinesRepo *RoutinesRepository
-	sceneService SceneExecutor
-	pollInterval time.Duration
-	maxRetries   int
-	stopCh       chan struct{}
-	wg           sync.WaitGroup
+	logger          *log.Logger
+	jobsRepo        *JobsRepository
+	routinesRepo    *RoutinesRepository
+	routineExecutor RoutineExecutor
+	pollInterval    time.Duration
+	maxRetries      int
+	stopCh          chan struct{}
+	wg              sync.WaitGroup
 }
 
 // NewJobRunner creates a new JobRunner instance.
@@ -63,7 +63,7 @@ func NewJobRunner(
 	logger *log.Logger,
 	jobsRepo *JobsRepository,
 	routinesRepo *RoutinesRepository,
-	sceneService SceneExecutor,
+	routineExecutor RoutineExecutor,
 	pollInterval time.Duration,
 	maxRetries int,
 ) *JobRunner {
@@ -78,13 +78,13 @@ func NewJobRunner(
 	}
 
 	return &JobRunner{
-		logger:       logger,
-		jobsRepo:     jobsRepo,
-		routinesRepo: routinesRepo,
-		sceneService: sceneService,
-		pollInterval: pollInterval,
-		maxRetries:   maxRetries,
-		stopCh:       make(chan struct{}),
+		logger:          logger,
+		jobsRepo:        jobsRepo,
+		routinesRepo:    routinesRepo,
+		routineExecutor: routineExecutor,
+		pollInterval:    pollInterval,
+		maxRetries:      maxRetries,
+		stopCh:          make(chan struct{}),
 	}
 }
 
@@ -193,12 +193,8 @@ func (r *JobRunner) executeJob(job *Job) error {
 		return err
 	}
 
-	// Step 4: Execute scene with routine's scene_id
-	execution, err := r.sceneService.ExecuteScene(
-		routine.SceneID,
-		job.IdempotencyKey,
-		scene.ExecuteOptions{},
-	)
+	// Step 4: Execute routine (handles music resolution and scene execution)
+	execution, err := r.routineExecutor.ExecuteRoutine(routine, job.IdempotencyKey)
 	if err != nil {
 		r.handleJobFailure(job, err)
 		return err

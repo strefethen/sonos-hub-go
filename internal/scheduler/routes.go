@@ -57,13 +57,25 @@ func RegisterRoutes(router chi.Router, routinesRepo *RoutinesRepository, jobsRep
 // Routine Handlers
 // ==========================================================================
 
+// ScheduleInput handles nested schedule from iOS.
+// iOS sends { "schedule": { "type": "weekly", "weekdays": [2,3,4,5,6], "time": "07:30" } }
+// but Go expects flat fields: schedule_type, schedule_weekdays, schedule_time.
+type ScheduleInput struct {
+	Type     string `json:"type"`
+	Weekdays []int  `json:"weekdays,omitempty"`
+	Month    *int   `json:"month,omitempty"`
+	Day      *int   `json:"day,omitempty"`
+	Time     string `json:"time"`
+}
+
 // createRoutineRequest is the input structure for creating a routine.
 // It supports both scene_id (pre-existing scene) and speakers (auto-create scene).
-// iOS sends nested music_policy object which we flatten to database columns.
+// iOS sends nested music_policy and schedule objects which we flatten to database columns.
 type createRoutineRequest struct {
 	CreateRoutineInput
 	Speakers    []SpeakerInput `json:"speakers,omitempty"`     // iOS sends speakers instead of scene_id
 	MusicPolicy *MusicPolicy   `json:"music_policy,omitempty"` // Nested music policy from iOS
+	Schedule    *ScheduleInput `json:"schedule,omitempty"`     // Nested schedule from iOS
 }
 
 func createRoutine(routinesRepo *RoutinesRepository, sceneService *scene.Service, deviceService *devices.Service, musicService *music.Service) func(w http.ResponseWriter, r *http.Request) error {
@@ -132,6 +144,11 @@ func createRoutine(routinesRepo *RoutinesRepository, sceneService *scene.Service
 		// Process nested music_policy from iOS and flatten to database columns
 		if req.MusicPolicy != nil {
 			processMusicPolicy(&req.CreateRoutineInput, req.MusicPolicy)
+		}
+
+		// Process nested schedule from iOS and flatten to database columns
+		if req.Schedule != nil {
+			processSchedule(&req.CreateRoutineInput, req.Schedule)
 		}
 
 		routine, err := routinesRepo.Create(req.CreateRoutineInput)
@@ -230,11 +247,12 @@ func buildDeviceRoomMap(deviceService *devices.Service) map[string]string {
 
 // updateRoutineRequest is the input structure for updating a routine.
 // It supports both scene_id and speakers (to update scene members).
-// iOS sends nested music_policy object which we flatten to database columns.
+// iOS sends nested music_policy and schedule objects which we flatten to database columns.
 type updateRoutineRequest struct {
 	UpdateRoutineInput
 	Speakers    []SpeakerInput `json:"speakers,omitempty"`     // iOS sends speakers to update scene members
 	MusicPolicy *MusicPolicy   `json:"music_policy,omitempty"` // Nested music policy from iOS
+	Schedule    *ScheduleInput `json:"schedule,omitempty"`     // Nested schedule from iOS
 }
 
 func updateRoutine(routinesRepo *RoutinesRepository, sceneService *scene.Service, deviceService *devices.Service, musicService *music.Service) func(w http.ResponseWriter, r *http.Request) error {
@@ -307,6 +325,11 @@ func updateRoutine(routinesRepo *RoutinesRepository, sceneService *scene.Service
 		// Process nested music_policy from iOS and flatten to database columns
 		if req.MusicPolicy != nil {
 			processMusicPolicyUpdate(&req.UpdateRoutineInput, req.MusicPolicy)
+		}
+
+		// Process nested schedule from iOS and flatten to database columns
+		if req.Schedule != nil {
+			processScheduleUpdate(&req.UpdateRoutineInput, req.Schedule)
 		}
 
 		routine, err := routinesRepo.Update(routineID, req.UpdateRoutineInput)
@@ -806,27 +829,32 @@ func formatRoutineWithDeviceMap(routine *Routine, deviceRoomMap map[string]strin
 						}
 					}
 
-					// Transform camelCase keys to snake_case for API response
-					normalized := make(map[string]any)
-					for k, v := range content {
-						switch k {
-						case "contentType":
-							normalized["content_type"] = v
-						case "contentId":
-							normalized["content_id"] = v
-						case "artworkUrl":
-							normalized["artwork_url"] = v
-						case "favoriteId":
-							normalized["favorite_id"] = v
-						case "serviceLogoUrl":
-							normalized["service_logo_url"] = v
-						case "serviceName":
-							normalized["service_name"] = v
-						default:
-							normalized[k] = v
+					// Only include music_content for direct type (not sonos_favorite)
+					// iOS DirectMusicContent struct requires service, content_type, content_id fields
+					// which sonos_favorite doesn't have - it uses the extracted metadata fields above
+					if contentType == "direct" {
+						// Transform camelCase keys to snake_case for API response
+						normalized := make(map[string]any)
+						for k, v := range content {
+							switch k {
+							case "contentType":
+								normalized["content_type"] = v
+							case "contentId":
+								normalized["content_id"] = v
+							case "artworkUrl":
+								normalized["artwork_url"] = v
+							case "favoriteId":
+								normalized["favorite_id"] = v
+							case "serviceLogoUrl":
+								normalized["service_logo_url"] = v
+							case "serviceName":
+								normalized["service_name"] = v
+							default:
+								normalized[k] = v
+							}
 						}
+						musicContentForAPI = normalized
 					}
-					musicContentForAPI = normalized
 				}
 			}
 
@@ -945,7 +973,7 @@ func formatRoutineWithDeviceMap(routine *Routine, deviceRoomMap map[string]strin
 	if routine.Description != nil {
 		result["description"] = *routine.Description
 	}
-	if routine.SnoozeUntil != nil {
+	if routine.SnoozeUntil != nil && !routine.SnoozeUntil.IsZero() {
 		result["snooze_until"] = api.RFC3339Millis(*routine.SnoozeUntil)
 	}
 
@@ -1280,6 +1308,59 @@ func buildMusicContentJSON(policy *MusicPolicy) string {
 		return ""
 	}
 	return string(data)
+}
+
+// ==========================================================================
+// Schedule Processing
+// ==========================================================================
+
+// processSchedule extracts nested schedule from iOS request and flattens
+// to database columns for routine creation.
+func processSchedule(input *CreateRoutineInput, schedule *ScheduleInput) {
+	if schedule == nil {
+		return
+	}
+
+	if schedule.Type != "" {
+		input.ScheduleType = ScheduleType(schedule.Type)
+	}
+	if len(schedule.Weekdays) > 0 {
+		input.ScheduleWeekdays = schedule.Weekdays
+	}
+	if schedule.Month != nil {
+		input.ScheduleMonth = schedule.Month
+	}
+	if schedule.Day != nil {
+		input.ScheduleDay = schedule.Day
+	}
+	if schedule.Time != "" {
+		input.ScheduleTime = schedule.Time
+	}
+}
+
+// processScheduleUpdate extracts nested schedule from iOS request and flattens
+// to database columns for routine updates.
+func processScheduleUpdate(input *UpdateRoutineInput, schedule *ScheduleInput) {
+	if schedule == nil {
+		return
+	}
+
+	if schedule.Type != "" {
+		st := ScheduleType(schedule.Type)
+		input.ScheduleType = &st
+	}
+	if len(schedule.Weekdays) > 0 {
+		input.ScheduleWeekdays = schedule.Weekdays
+	}
+	if schedule.Month != nil {
+		input.ScheduleMonth = schedule.Month
+	}
+	if schedule.Day != nil {
+		input.ScheduleDay = schedule.Day
+	}
+	if schedule.Time != "" {
+		input.ScheduleTime = &schedule.Time
+	}
 }
 
 // ==========================================================================
