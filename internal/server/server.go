@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/strefethen/sonos-hub-go/internal/api"
+	"github.com/strefethen/sonos-hub-go/internal/applemusic"
 	"github.com/strefethen/sonos-hub-go/internal/audit"
 	"github.com/strefethen/sonos-hub-go/internal/auth"
 	"github.com/strefethen/sonos-hub-go/internal/config"
@@ -60,7 +61,7 @@ func requestLoggerMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		wrapped := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(wrapped, r)
-		log.Printf("%s %s %d %s", r.Method, r.URL.Path, wrapped.status, time.Since(start).Round(time.Millisecond))
+		log.Printf("%s %s %d %s", r.Method, r.URL.RequestURI(), wrapped.status, time.Since(start).Round(time.Millisecond))
 	})
 }
 
@@ -176,13 +177,54 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 	spotifySearchManager := spotifysearch.NewConnectionManager()
 	spotifysearch.RegisterRoutes(router, spotifySearchManager)
 
+	// Create Apple Music client if configured
+	var appleClient *applemusic.Client
+	if cfg.AppleTeamID != "" && cfg.AppleKeyID != "" && cfg.ApplePrivateKeyPath != "" {
+		tokenManager, err := applemusic.NewTokenManager(applemusic.TokenManagerConfig{
+			TeamID:         cfg.AppleTeamID,
+			KeyID:          cfg.AppleKeyID,
+			PrivateKeyPath: cfg.ApplePrivateKeyPath,
+			Expiry:         time.Duration(cfg.AppleTokenExpirySec) * time.Second,
+		})
+		if err != nil {
+			log.Printf("Warning: Failed to create Apple Music token manager: %v", err)
+		} else {
+			appleClient = applemusic.NewClient(applemusic.ClientConfig{
+				TokenManager: tokenManager,
+				BaseURL:      cfg.AppleMusicAPIURL,
+				Storefront:   cfg.DefaultStorefront,
+				Timeout:      time.Duration(cfg.SonosTimeoutMs) * time.Millisecond,
+			})
+			log.Printf("Apple Music client initialized (storefront: %s)", cfg.DefaultStorefront)
+		}
+	}
+
 	// Create music service (needed for scheduler routes)
 	musicService := music.NewService(cfg, dbPair, nil)
-	music.RegisterRoutes(router, musicService, spotifySearchManager, soapClient, deviceService)
+	music.RegisterRoutes(router, musicService, spotifySearchManager, appleClient, soapClient, deviceService)
 
-	// Create scheduler service with scene service adapter as dependency
+	// Create content resolver for routine execution (handles direct service playback)
+	contentResolver := sonos.NewContentResolver(
+		soapClient,
+		deviceService,
+		time.Duration(cfg.SonosTimeoutMs)*time.Millisecond,
+		nil,
+	)
+
+	// Create scene adapter for the routine executor
 	sceneAdapter := scheduler.NewSceneServiceAdapter(sceneService)
-	schedulerService := scheduler.NewService(cfg, dbPair, nil, sceneAdapter)
+
+	// Create routine executor adapter that handles music resolution before scene execution
+	routineExecutor := scheduler.NewRoutineExecutorAdapter(
+		sceneAdapter,       // SceneExecutor for scene execution
+		musicService,       // For SelectItem from music sets
+		contentResolver,    // For ResolveFavorite/ResolveDirectContent to get URI/metadata
+		deviceService,      // For ResolveDeviceIP
+		time.Duration(cfg.SonosTimeoutMs)*time.Millisecond,
+	)
+
+	// Create scheduler service with routine executor
+	schedulerService := scheduler.NewService(cfg, dbPair, nil, routineExecutor)
 	scheduler.RegisterRoutes(router,
 		scheduler.NewRoutinesRepository(dbPair),
 		scheduler.NewJobsRepository(dbPair),
