@@ -121,13 +121,66 @@ type ExecutionStep struct {
 	Details   map[string]any `json:"details,omitempty"`
 }
 
+// PlaybackMonitorConfig configures the playback monitoring behavior.
+type PlaybackMonitorConfig struct {
+	MaxWaitTime       time.Duration // Overall timeout (30 seconds)
+	InitialPollDelay  time.Duration // First poll delay (500ms)
+	MaxPollDelay      time.Duration // Max poll delay (3 seconds)
+	BackoffMultiplier float64       // Backoff factor (1.5)
+	TransitionTimeout time.Duration // Max time in TRANSITIONING (15s)
+}
+
+// PlaybackState represents observed device state during monitoring.
+type PlaybackState struct {
+	TransportState string    // PLAYING, PAUSED_PLAYBACK, STOPPED, TRANSITIONING
+	TrackURI       string    // Current track URI
+	AVTransportURI string    // Transport URI (queue or direct)
+	ObservedAt     time.Time
+	Source         string // "cache" or "soap"
+}
+
+// PlaybackFailureReason provides detailed failure information.
+type PlaybackFailureReason string
+
+const (
+	FailureReasonDeviceOffline      PlaybackFailureReason = "DEVICE_OFFLINE"
+	FailureReasonContentNotLoaded   PlaybackFailureReason = "CONTENT_NOT_LOADED"
+	FailureReasonURIMismatch        PlaybackFailureReason = "URI_MISMATCH"
+	FailureReasonStuckTransitioning PlaybackFailureReason = "STUCK_TRANSITIONING"
+	FailureReasonTVModeActive       PlaybackFailureReason = "TV_MODE_ACTIVE"
+	FailureReasonPlaybackStopped    PlaybackFailureReason = "PLAYBACK_STOPPED"
+	FailureReasonTimeout            PlaybackFailureReason = "TIMEOUT"
+)
+
+// PlaybackResult contains the result of playback monitoring.
+type PlaybackResult struct {
+	Success        bool
+	FinalState     *PlaybackState
+	FailureReason  PlaybackFailureReason
+	FailureMessage string
+	Attempts       int
+	Duration       time.Duration
+}
+
+// ExpectedContent describes what content we expect to be playing.
+type ExpectedContent struct {
+	URI       string
+	UsesQueue bool
+	QueueURI  string // x-rincon-queue:RINCON_xxx#0 if UsesQueue
+}
+
 // Verification contains the result of playback verification.
 type Verification struct {
-	PlaybackConfirmed       bool      `json:"playback_confirmed"`
-	TransportState          string    `json:"transport_state,omitempty"`
-	TrackURI                string    `json:"track_uri,omitempty"`
-	CheckedAt               time.Time `json:"checked_at"`
-	VerificationUnavailable bool      `json:"verification_unavailable,omitempty"`
+	PlaybackConfirmed       bool                  `json:"playback_confirmed"`
+	TransportState          string                `json:"transport_state,omitempty"`
+	TrackURI                string                `json:"track_uri,omitempty"`
+	CheckedAt               time.Time             `json:"checked_at"`
+	VerificationUnavailable bool                  `json:"verification_unavailable,omitempty"`
+	FailureReason           PlaybackFailureReason `json:"failure_reason,omitempty"`
+	FailureMessage          string                `json:"failure_message,omitempty"`
+	Attempts                int                   `json:"attempts,omitempty"`
+	DurationMs              int64                 `json:"duration_ms,omitempty"`
+	DataSource              string                `json:"data_source,omitempty"`
 }
 
 // SceneExecution represents a single execution of a scene.
@@ -150,6 +203,7 @@ type MusicContent struct {
 	SonosFavoriteID string `json:"sonos_favorite_id,omitempty"`
 	URI             string `json:"uri,omitempty"`
 	Metadata        string `json:"metadata,omitempty"`
+	UsesQueue       bool   `json:"uses_queue,omitempty"` // True for containers (playlists, albums, podcasts)
 }
 
 // ExecuteOptions contains options for scene execution.
