@@ -28,6 +28,14 @@ type Config struct {
 	SonosClientID            string
 	SonosClientSecret        string
 	SonosRedirectURI         string
+	// ZoneCacheTTLSeconds is the TTL for zone group topology cache in seconds.
+	// Zone topology changes infrequently so caching reduces SOAP calls.
+	ZoneCacheTTLSeconds int
+
+	// UPnP Event Subscription settings
+	UPnPEventsEnabled          bool
+	UPnPSubscriptionTimeoutSec int
+	UPnPStateCacheTTLSeconds   int
 }
 
 // Load reads configuration from environment variables with defaults.
@@ -59,6 +67,10 @@ func Load() (Config, error) {
 	sonosClientID := envString("SONOS_CLIENT_ID", "")
 	sonosClientSecret := envString("SONOS_CLIENT_SECRET", "")
 	sonosRedirectURI := envString("SONOS_REDIRECT_URI", "")
+	zoneCacheTTL := envInt("ZONE_CACHE_TTL_SECONDS", 30)
+	upnpEventsEnabled := envBool("UPNP_EVENTS_ENABLED", true)
+	upnpSubscriptionTimeout := envInt("UPNP_SUBSCRIPTION_TIMEOUT", 3600)
+	upnpStateCacheTTL := envInt("UPNP_STATE_CACHE_TTL_SECONDS", 30)
 
 	if len(strings.TrimSpace(jwtSecret)) < 32 {
 		return Config{}, fmt.Errorf("JWT_SECRET must be at least 32 characters")
@@ -82,7 +94,11 @@ func Load() (Config, error) {
 		DefaultSonosIP:           defaultSonosIP,
 		SonosClientID:            sonosClientID,
 		SonosClientSecret:        sonosClientSecret,
-		SonosRedirectURI:         sonosRedirectURI,
+		SonosRedirectURI:           sonosRedirectURI,
+		ZoneCacheTTLSeconds:        zoneCacheTTL,
+		UPnPEventsEnabled:          upnpEventsEnabled,
+		UPnPSubscriptionTimeoutSec: upnpSubscriptionTimeout,
+		UPnPStateCacheTTLSeconds:   upnpStateCacheTTL,
 	}, nil
 }
 
