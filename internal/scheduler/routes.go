@@ -57,32 +57,86 @@ func RegisterRoutes(router chi.Router, routinesRepo *RoutinesRepository, jobsRep
 // Routine Handlers
 // ==========================================================================
 
+// createRoutineRequest is the input structure for creating a routine.
+// It supports both scene_id (pre-existing scene) and speakers (auto-create scene).
+// iOS sends nested music_policy object which we flatten to database columns.
+type createRoutineRequest struct {
+	CreateRoutineInput
+	Speakers    []SpeakerInput `json:"speakers,omitempty"`     // iOS sends speakers instead of scene_id
+	MusicPolicy *MusicPolicy   `json:"music_policy,omitempty"` // Nested music policy from iOS
+}
+
 func createRoutine(routinesRepo *RoutinesRepository, sceneService *scene.Service, deviceService *devices.Service, musicService *music.Service) func(w http.ResponseWriter, r *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
-		var input CreateRoutineInput
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		var req createRoutineRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			return apperrors.NewValidationError("invalid request body", nil)
 		}
 
 		// Validate required fields
-		if input.Name == "" {
+		if req.Name == "" {
 			return apperrors.NewValidationError("name is required", nil)
 		}
-		if input.SceneID == "" {
-			return apperrors.NewValidationError("scene_id is required", nil)
+
+		// Require either scene_id OR speakers
+		if req.SceneID == "" && len(req.Speakers) == 0 {
+			return apperrors.NewValidationError("either scene_id or speakers is required", nil)
 		}
 
-		// Verify scene exists
-		existingScene, err := sceneService.GetScene(input.SceneID)
+		// Auto-create scene if speakers provided and no scene_id
+		if len(req.Speakers) > 0 && req.SceneID == "" {
+			// Convert SpeakerInput to SceneMember
+			members := make([]scene.SceneMember, len(req.Speakers))
+			for i, s := range req.Speakers {
+				vol := s.Volume
+				members[i] = scene.SceneMember{
+					UDN:          s.UDN,
+					TargetVolume: &vol,
+				}
+			}
+
+			// Auto-create scene for this routine
+			description := "Auto-created scene for routine"
+			newScene, err := sceneService.CreateScene(scene.CreateSceneInput{
+				Name:        "Routine: " + req.Name,
+				Description: &description,
+				Members:     members,
+			})
+			if err != nil {
+				log.Printf("Failed to auto-create scene for routine: %v", err)
+				return apperrors.NewInternalError("Failed to create scene for routine")
+			}
+			req.SceneID = newScene.SceneID
+			log.Printf("Auto-created scene %s for routine %s", newScene.SceneID, req.Name)
+
+			// Also convert speakers to internal format for storage
+			req.SpeakersJSON = make([]Speaker, len(req.Speakers))
+			for i, s := range req.Speakers {
+				vol := s.Volume
+				req.SpeakersJSON[i] = Speaker{
+					UDN:    s.UDN,
+					Volume: &vol,
+				}
+			}
+		}
+
+		// Verify scene exists (either pre-existing or just created)
+		existingScene, err := sceneService.GetScene(req.SceneID)
 		if err != nil {
 			return apperrors.NewInternalError("Failed to verify scene")
 		}
 		if existingScene == nil {
-			return apperrors.NewAppError(apperrors.ErrorCodeSceneNotFound, "Scene not found", 404, map[string]any{"scene_id": input.SceneID}, nil)
+			return apperrors.NewAppError(apperrors.ErrorCodeSceneNotFound, "Scene not found", 404, map[string]any{"scene_id": req.SceneID}, nil)
 		}
 
-		routine, err := routinesRepo.Create(input)
+		// Process nested music_policy from iOS and flatten to database columns
+		if req.MusicPolicy != nil {
+			processMusicPolicy(&req.CreateRoutineInput, req.MusicPolicy)
+		}
+
+		routine, err := routinesRepo.Create(req.CreateRoutineInput)
 		if err != nil {
+			log.Printf("Failed to create routine: %v", err)
 			return apperrors.NewInternalError("Failed to create routine")
 		}
 
@@ -156,7 +210,7 @@ func getRoutine(routinesRepo *RoutinesRepository, deviceService *devices.Service
 	}
 }
 
-// buildDeviceRoomMap creates a map of device_id -> room_name from the device service.
+// buildDeviceRoomMap creates a map of udn -> room_name from the device service.
 // NON-BLOCKING: Returns empty map if topology not yet available.
 // Matches Node.js behavior: continue without room names if device registry unavailable.
 func buildDeviceRoomMap(deviceService *devices.Service) map[string]string {
@@ -168,33 +222,94 @@ func buildDeviceRoomMap(deviceService *devices.Service) map[string]string {
 	topology := deviceService.GetTopologyIfCached()
 	if topology != nil {
 		for _, device := range topology.Devices {
-			deviceRoomMap[device.DeviceID] = device.RoomName
+			deviceRoomMap[device.UDN] = device.RoomName
 		}
 	}
 	return deviceRoomMap
+}
+
+// updateRoutineRequest is the input structure for updating a routine.
+// It supports both scene_id and speakers (to update scene members).
+// iOS sends nested music_policy object which we flatten to database columns.
+type updateRoutineRequest struct {
+	UpdateRoutineInput
+	Speakers    []SpeakerInput `json:"speakers,omitempty"`     // iOS sends speakers to update scene members
+	MusicPolicy *MusicPolicy   `json:"music_policy,omitempty"` // Nested music policy from iOS
 }
 
 func updateRoutine(routinesRepo *RoutinesRepository, sceneService *scene.Service, deviceService *devices.Service, musicService *music.Service) func(w http.ResponseWriter, r *http.Request) error {
 	return func(w http.ResponseWriter, r *http.Request) error {
 		routineID := chi.URLParam(r, "routine_id")
 
-		var input UpdateRoutineInput
-		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		var req updateRoutineRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			return apperrors.NewValidationError("invalid request body", nil)
 		}
 
+		// Get existing routine to find current scene_id
+		existingRoutine, err := routinesRepo.GetByID(routineID)
+		if err != nil {
+			return apperrors.NewInternalError("Failed to get routine")
+		}
+		if existingRoutine == nil {
+			return apperrors.NewAppError(apperrors.ErrorCodeRoutineNotFound, "Routine not found", 404, map[string]any{"routine_id": routineID}, nil)
+		}
+
+		// If speakers are provided, update the scene members
+		if len(req.Speakers) > 0 {
+			// Convert SpeakerInput to SceneMember
+			members := make([]scene.SceneMember, len(req.Speakers))
+			for i, s := range req.Speakers {
+				vol := s.Volume
+				members[i] = scene.SceneMember{
+					UDN:          s.UDN,
+					TargetVolume: &vol,
+				}
+			}
+
+			// Update existing scene with new members
+			sceneID := existingRoutine.SceneID
+			if req.SceneID != nil {
+				sceneID = *req.SceneID
+			}
+
+			_, err := sceneService.UpdateScene(sceneID, scene.UpdateSceneInput{
+				Members: members,
+			})
+			if err != nil {
+				log.Printf("Failed to update scene members: %v", err)
+				return apperrors.NewInternalError("Failed to update scene")
+			}
+			log.Printf("Updated scene %s members for routine %s", sceneID, routineID)
+
+			// Also convert speakers to internal format for storage
+			req.SpeakersJSON = make([]Speaker, len(req.Speakers))
+			for i, s := range req.Speakers {
+				vol := s.Volume
+				req.SpeakersJSON[i] = Speaker{
+					UDN:    s.UDN,
+					Volume: &vol,
+				}
+			}
+		}
+
 		// If scene_id is being updated, verify it exists
-		if input.SceneID != nil {
-			existingScene, err := sceneService.GetScene(*input.SceneID)
+		if req.SceneID != nil {
+			existingScene, err := sceneService.GetScene(*req.SceneID)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to verify scene")
 			}
 			if existingScene == nil {
-				return apperrors.NewAppError(apperrors.ErrorCodeSceneNotFound, "Scene not found", 404, map[string]any{"scene_id": *input.SceneID}, nil)
+				return apperrors.NewAppError(apperrors.ErrorCodeSceneNotFound, "Scene not found", 404, map[string]any{"scene_id": *req.SceneID}, nil)
 			}
 		}
 
-		routine, err := routinesRepo.Update(routineID, input)
+		// Process nested music_policy from iOS and flatten to database columns
+		if req.MusicPolicy != nil {
+			processMusicPolicyUpdate(&req.UpdateRoutineInput, req.MusicPolicy)
+		}
+
+		routine, err := routinesRepo.Update(routineID, req.UpdateRoutineInput)
 		if err != nil {
 			return apperrors.NewInternalError("Failed to update routine")
 		}
@@ -629,8 +744,11 @@ func formatRoutineWithDeviceMap(routine *Routine, deviceRoomMap map[string]strin
 		"type": string(routine.ScheduleType),
 		"time": routine.ScheduleTime,
 	}
+	// Always include weekdays (iOS expects it even when empty)
 	if len(routine.ScheduleWeekdays) > 0 {
 		schedule["weekdays"] = routine.ScheduleWeekdays
+	} else {
+		schedule["weekdays"] = []int{}
 	}
 	if routine.ScheduleMonth != nil {
 		schedule["month"] = *routine.ScheduleMonth
@@ -835,7 +953,7 @@ func formatRoutineWithDeviceMap(routine *Routine, deviceRoomMap map[string]strin
 	// Node.js always includes speakers array (empty if none)
 	speakers := make([]map[string]any, 0, len(routine.SpeakersJSON))
 	for _, s := range routine.SpeakersJSON {
-		speaker := map[string]any{"device_id": s.DeviceID}
+		speaker := map[string]any{"udn": s.UDN}
 		if s.Volume != nil {
 			speaker["volume"] = *s.Volume
 		} else {
@@ -843,7 +961,7 @@ func formatRoutineWithDeviceMap(routine *Routine, deviceRoomMap map[string]strin
 		}
 		// Add room_name from device registry lookup
 		if deviceRoomMap != nil {
-			if roomName, ok := deviceRoomMap[s.DeviceID]; ok {
+			if roomName, ok := deviceRoomMap[s.UDN]; ok {
 				speaker["room_name"] = roomName
 			} else {
 				speaker["room_name"] = nil
@@ -865,14 +983,38 @@ func formatRoutineWithDeviceMap(routine *Routine, deviceRoomMap map[string]strin
 }
 
 // formatRoutineWithEnrichment formats a routine with device and music set enrichment.
-// Node.js returns null for music_set on ALL non-FIXED policies (ROTATION and SHUFFLE).
+// For ROTATION/SHUFFLE policies, fetches enrichment data from the music set to populate artwork.
 func formatRoutineWithEnrichment(routine *Routine, deviceRoomMap map[string]string, musicService *music.Service) map[string]any {
 	result := formatRoutineWithDeviceMap(routine, deviceRoomMap)
 
-	// Node.js returns null for music_set on ALL non-FIXED policies
-	// Only FIXED policy can have a music_set (handled in formatRoutineWithDeviceMap)
-	if routine.MusicPolicyType == MusicPolicyTypeRotation || routine.MusicPolicyType == MusicPolicyTypeShuffle {
-		result["music_set"] = nil
+	// For ROTATION/SHUFFLE policies, fetch enrichment from the music set
+	// This provides artwork_url from the first item in the set
+	if (routine.MusicPolicyType == MusicPolicyTypeRotation || routine.MusicPolicyType == MusicPolicyTypeShuffle) && musicService != nil {
+		if routine.MusicSetID != nil && *routine.MusicSetID != "" {
+			enrichment, err := musicService.GetSetEnrichment(*routine.MusicSetID)
+			if err == nil && enrichment != nil {
+				musicSet := map[string]any{
+					"name":             enrichment.Name,
+					"artwork_url":      nil,
+					"service_logo_url": nil,
+					"service_name":     nil,
+				}
+				if enrichment.ArtworkURL != nil {
+					musicSet["artwork_url"] = *enrichment.ArtworkURL
+				}
+				if enrichment.ServiceLogoURL != nil {
+					musicSet["service_logo_url"] = *enrichment.ServiceLogoURL
+				}
+				if enrichment.ServiceName != nil {
+					musicSet["service_name"] = *enrichment.ServiceName
+				}
+				result["music_set"] = musicSet
+			} else {
+				result["music_set"] = nil
+			}
+		} else {
+			result["music_set"] = nil
+		}
 	}
 
 	return result
@@ -992,6 +1134,155 @@ func formatHoliday(holiday *Holiday) map[string]any {
 }
 
 // ==========================================================================
+// Music Policy Processing
+// ==========================================================================
+
+// processMusicPolicy extracts nested music_policy from iOS request and flattens
+// to database columns. It also builds music_content_json with serviceLogoUrl.
+func processMusicPolicy(input *CreateRoutineInput, policy *MusicPolicy) {
+	if policy == nil {
+		return
+	}
+
+	// Set music policy type from nested policy
+	if policy.Type != "" {
+		policyType := MusicPolicyType(policy.Type)
+		input.MusicPolicyType = policyType
+	}
+
+	// For FIXED policy, extract Sonos favorite fields
+	if policy.Type == "FIXED" {
+		if policy.SonosFavoriteID != nil {
+			input.MusicSonosFavoriteID = policy.SonosFavoriteID
+		}
+
+		// Build music_content_json with all metadata including serviceLogoUrl
+		if policy.SonosFavoriteID != nil || policy.MusicContent != nil {
+			contentJSON := buildMusicContentJSON(policy)
+			if contentJSON != "" {
+				input.MusicContentJSON = &contentJSON
+			}
+		}
+	}
+
+	// For ROTATION/SHUFFLE policy, extract set fields
+	if policy.Type == "ROTATION" || policy.Type == "SHUFFLE" {
+		if policy.SetID != nil {
+			input.MusicSetID = policy.SetID
+		}
+		if policy.NoRepeatWindow != nil {
+			input.MusicNoRepeatWindowMinutes = policy.NoRepeatWindow
+		}
+		if policy.NoRepeatWindowMinutes != nil {
+			input.MusicNoRepeatWindowMinutes = policy.NoRepeatWindowMinutes
+		}
+		if policy.FallbackBehavior != nil {
+			input.MusicFallbackBehavior = policy.FallbackBehavior
+		}
+	}
+}
+
+// processMusicPolicyUpdate extracts nested music_policy from iOS request for updates.
+func processMusicPolicyUpdate(input *UpdateRoutineInput, policy *MusicPolicy) {
+	if policy == nil {
+		return
+	}
+
+	// Set music policy type from nested policy
+	if policy.Type != "" {
+		policyType := MusicPolicyType(policy.Type)
+		input.MusicPolicyType = &policyType
+	}
+
+	// For FIXED policy, extract Sonos favorite fields
+	if policy.Type == "FIXED" {
+		if policy.SonosFavoriteID != nil {
+			input.MusicSonosFavoriteID = policy.SonosFavoriteID
+		}
+
+		// Build music_content_json with all metadata including serviceLogoUrl
+		if policy.SonosFavoriteID != nil || policy.MusicContent != nil {
+			contentJSON := buildMusicContentJSON(policy)
+			if contentJSON != "" {
+				input.MusicContentJSON = &contentJSON
+			}
+		}
+	}
+
+	// For ROTATION/SHUFFLE policy, extract set fields
+	if policy.Type == "ROTATION" || policy.Type == "SHUFFLE" {
+		if policy.SetID != nil {
+			input.MusicSetID = policy.SetID
+		}
+		if policy.NoRepeatWindow != nil {
+			input.MusicNoRepeatWindowMinutes = policy.NoRepeatWindow
+		}
+		if policy.NoRepeatWindowMinutes != nil {
+			input.MusicNoRepeatWindowMinutes = policy.NoRepeatWindowMinutes
+		}
+		if policy.FallbackBehavior != nil {
+			input.MusicFallbackBehavior = policy.FallbackBehavior
+		}
+	}
+}
+
+// buildMusicContentJSON constructs the music_content_json string from music policy.
+// This JSON is stored in the database and used to populate music_set display info.
+// Node.js format: {"type":"sonos_favorite","favoriteId":"FV:2/77","name":"Title","artworkUrl":"...","serviceLogoUrl":"...","serviceName":"..."}
+func buildMusicContentJSON(policy *MusicPolicy) string {
+	if policy == nil {
+		return ""
+	}
+
+	content := make(map[string]any)
+
+	// Handle direct music content (Apple Music, Spotify)
+	if policy.MusicContent != nil && policy.MusicContent.Type == "direct" {
+		content["type"] = "direct"
+		if policy.MusicContent.Service != nil {
+			content["service"] = *policy.MusicContent.Service
+		}
+		if policy.MusicContent.ContentType != nil {
+			content["contentType"] = *policy.MusicContent.ContentType
+		}
+		if policy.MusicContent.ContentID != nil {
+			content["contentId"] = *policy.MusicContent.ContentID
+		}
+		if policy.MusicContent.Title != nil {
+			content["title"] = *policy.MusicContent.Title
+		}
+		if policy.MusicContent.ArtworkUrl != nil {
+			content["artworkUrl"] = *policy.MusicContent.ArtworkUrl
+		}
+	} else if policy.SonosFavoriteID != nil {
+		// Sonos favorite content
+		content["type"] = "sonos_favorite"
+		content["favoriteId"] = *policy.SonosFavoriteID
+
+		if policy.SonosFavoriteName != nil {
+			content["name"] = *policy.SonosFavoriteName
+		}
+		if policy.SonosFavoriteArtworkUrl != nil {
+			content["artworkUrl"] = *policy.SonosFavoriteArtworkUrl
+		}
+		if policy.SonosFavoriteServiceLogoUrl != nil {
+			content["serviceLogoUrl"] = *policy.SonosFavoriteServiceLogoUrl
+		}
+		if policy.SonosFavoriteServiceName != nil {
+			content["serviceName"] = *policy.SonosFavoriteServiceName
+		}
+	} else {
+		return ""
+	}
+
+	data, err := json.Marshal(content)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+// ==========================================================================
 // Additional Routine Handlers
 // ==========================================================================
 
@@ -1064,8 +1355,8 @@ func runRoutine(routinesRepo *RoutinesRepository, jobsRepo *JobsRepository) func
 
 // TestRoutineInput represents the request body for testing a routine without saving.
 type TestRoutineInput struct {
-	SceneID   string   `json:"scene_id"`
-	DeviceIDs []string `json:"device_ids,omitempty"`
+	SceneID string   `json:"scene_id"`
+	UDNs    []string `json:"udns,omitempty"`
 }
 
 func testRoutine(sceneService *scene.Service) func(w http.ResponseWriter, r *http.Request) error {
@@ -1096,7 +1387,7 @@ func testRoutine(sceneService *scene.Service) func(w http.ResponseWriter, r *htt
 			"status":     "validated",
 			"scene_id":   input.SceneID,
 			"scene_name": existingScene.Name,
-			"device_ids": input.DeviceIDs,
+			"udns":       input.UDNs,
 			"message":    "Routine configuration is valid",
 		})
 	}
