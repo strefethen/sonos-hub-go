@@ -1,9 +1,13 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"log"
+	"net"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -23,8 +27,10 @@ import (
 	"github.com/strefethen/sonos-hub-go/internal/scheduler"
 	"github.com/strefethen/sonos-hub-go/internal/settings"
 	"github.com/strefethen/sonos-hub-go/internal/sonos"
+	"github.com/strefethen/sonos-hub-go/internal/sonos/events"
 	"github.com/strefethen/sonos-hub-go/internal/sonos/soap"
 	"github.com/strefethen/sonos-hub-go/internal/sonoscloud"
+	"github.com/strefethen/sonos-hub-go/internal/spotifysearch"
 	"github.com/strefethen/sonos-hub-go/internal/system"
 	"github.com/strefethen/sonos-hub-go/internal/templates"
 )
@@ -38,6 +44,14 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.status = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Hijack implements http.Hijacker for WebSocket support
+func (rw *responseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hijacker, ok := rw.ResponseWriter.(http.Hijacker); ok {
+		return hijacker.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
 }
 
 // requestLoggerMiddleware logs all incoming HTTP requests
@@ -80,6 +94,41 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 
 	soapClient := soap.NewClient(time.Duration(cfg.SonosTimeoutMs) * time.Millisecond)
 	deviceService := devices.NewService(cfg, nil, soapClient)
+
+	// Create zone cache for sharing between sonos service and event manager
+	zoneCache := sonos.NewZoneGroupCache(time.Duration(cfg.ZoneCacheTTLSeconds) * time.Second)
+
+	// Create UPnP event manager for real-time device state updates
+	// Must be created before device discovery starts so we can subscribe to devices
+	port, _ := strconv.Atoi(cfg.Port)
+	eventConfig := events.ManagerConfig{
+		Enabled:             cfg.UPnPEventsEnabled,
+		SubscriptionTimeout: cfg.UPnPSubscriptionTimeoutSec,
+		RenewalBuffer:       60,
+		StateCacheTTL:       time.Duration(cfg.UPnPStateCacheTTLSeconds) * time.Second,
+		Services: []events.ServiceType{
+			events.ServiceAVTransport,
+			events.ServiceRenderingControl,
+			events.ServiceZoneGroupTopology,
+		},
+	}
+	eventManager := events.NewManager(eventConfig, port, zoneCache)
+
+	// Set up device discovery callback to subscribe to UPnP events when devices are found
+	if cfg.UPnPEventsEnabled && !options.DisableDiscovery {
+		deviceService.SetDiscoveryCallback(func(discovered []devices.DeviceInfo) {
+			for _, device := range discovered {
+				go func(ip, udn string) {
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					if err := eventManager.SubscribeDevice(ctx, ip, udn); err != nil {
+						log.Printf("UPNP: Failed to subscribe to %s: %v", ip, err)
+					}
+				}(device.IP, device.UDN)
+			}
+		})
+	}
+
 	// Only disable discovery if explicitly requested via options (for tests)
 	// AllowTestMode is for auth bypass only, not for skipping device discovery
 	if options.DisableDiscovery {
@@ -89,8 +138,33 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 	}
 	devices.RegisterRoutes(router, deviceService)
 
-	sonosService := sonos.NewService(deviceService, soapClient, cfg.DefaultSonosIP, time.Duration(cfg.SonosTimeoutMs)*time.Millisecond)
+	// Create state provider adapter to break import cycle
+	var stateProvider sonos.StateProvider
+	if cfg.UPnPEventsEnabled {
+		stateProvider = NewStateCacheAdapter(eventManager.GetStateCache())
+	}
+
+	// Create sonos service with state provider for hybrid data layer
+	sonosService := sonos.NewServiceWithStateProvider(deviceService, soapClient, cfg.DefaultSonosIP, time.Duration(cfg.SonosTimeoutMs)*time.Millisecond, time.Duration(cfg.ZoneCacheTTLSeconds)*time.Second, stateProvider)
+	sonosService.ZoneCache = zoneCache // Use the shared zone cache
 	sonos.RegisterRoutes(router, sonosService)
+
+	// UPnP callback handler - will be wired up outside Chi to bypass method restrictions
+	var upnpHandler http.Handler
+	if cfg.UPnPEventsEnabled && !options.DisableDiscovery {
+		callbackHandler := events.NewCallbackHandler(eventManager)
+		upnpMux := http.NewServeMux()
+		upnpMux.Handle("/upnp/notify", callbackHandler)
+		upnpMux.Handle("/upnp/notify/avtransport", callbackHandler)
+		upnpMux.Handle("/upnp/notify/renderingcontrol", callbackHandler)
+		upnpMux.Handle("/upnp/notify/topology", callbackHandler)
+		upnpHandler = upnpMux
+
+		// Start event manager
+		if err := eventManager.Start(); err != nil {
+			log.Printf("Warning: Failed to start UPnP event manager: %v", err)
+		}
+	}
 
 	playService := sonos.NewPlayService(soapClient, deviceService, time.Duration(cfg.SonosTimeoutMs)*time.Millisecond, nil)
 	sonos.RegisterPlayRoutes(router, playService)
@@ -98,9 +172,13 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 	sceneService := scene.NewService(cfg, dbPair, nil, deviceService, soapClient)
 	scene.RegisterRoutes(router, sceneService)
 
+	// Create Spotify search connection manager (for Chrome extension WebSocket)
+	spotifySearchManager := spotifysearch.NewConnectionManager()
+	spotifysearch.RegisterRoutes(router, spotifySearchManager)
+
 	// Create music service (needed for scheduler routes)
 	musicService := music.NewService(cfg, dbPair, nil)
-	music.RegisterRoutes(router, musicService)
+	music.RegisterRoutes(router, musicService, spotifySearchManager, soapClient, deviceService)
 
 	// Create scheduler service with scene service adapter as dependency
 	sceneAdapter := scheduler.NewSceneServiceAdapter(sceneService)
@@ -135,8 +213,17 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 	// Create Sonos Cloud service (only if configured)
 	if cfg.SonosClientID != "" && cfg.SonosClientSecret != "" {
 		sonosCloudRepo := sonoscloud.NewRepository(dbPair)
-		sonosCloudClient := sonoscloud.NewClient(cfg.SonosClientID, cfg.SonosClientSecret, "", sonosCloudRepo)
+		sonosCloudClient := sonoscloud.NewClient(cfg.SonosClientID, cfg.SonosClientSecret, cfg.SonosRedirectURI, sonosCloudRepo)
 		sonoscloud.RegisterRoutes(router, sonosCloudClient)
+	}
+
+	// Register webhook route for Sonos Cloud events (always available, doesn't require OAuth)
+	// The webhook endpoint receives events from Sonos servers, not user browsers
+	if cfg.UPnPEventsEnabled {
+		stateCache := eventManager.GetStateCache()
+		// For now, pass nil resolver - cloud webhooks will log but not update cache
+		// until we implement group ID to IP resolution
+		sonoscloud.RegisterWebhookRoute(router, stateCache, nil)
 	}
 
 	// Serve static files with caching headers (matching Node.js behavior)
@@ -148,13 +235,30 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 		schedulerService.Stop()
 		auditService.StopPruneJob()
 		deviceService.StopPeriodicDiscovery()
+		spotifySearchManager.Close()
+		// Stop UPnP event manager (unsubscribes from all devices)
+		if eventManager != nil && eventManager.IsEnabled() {
+			eventManager.Stop(ctx)
+		}
 		if ctx == nil {
 			ctx = context.Background()
 		}
 		return dbPair.Close()
 	}
 
-	return router, shutdown, nil
+	// Wrap router to intercept /upnp paths before Chi (NOTIFY is not a standard HTTP method)
+	var handler http.Handler = router
+	if upnpHandler != nil {
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/upnp/") {
+				upnpHandler.ServeHTTP(w, r)
+				return
+			}
+			router.ServeHTTP(w, r)
+		})
+	}
+
+	return handler, shutdown, nil
 }
 
 // staticFileHandler wraps a file server with caching headers matching Node.js behavior

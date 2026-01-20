@@ -23,6 +23,16 @@ type discoveryResult struct {
 	err        error
 }
 
+// DeviceDiscoveryCallback is called when devices are discovered.
+// The callback receives a list of device IP addresses and UDNs.
+type DeviceDiscoveryCallback func(devices []DeviceInfo)
+
+// DeviceInfo contains basic device identification for callbacks.
+type DeviceInfo struct {
+	IP  string
+	UDN string
+}
+
 type Service struct {
 	cfg                config.Config
 	logger             *log.Logger
@@ -41,6 +51,10 @@ type Service struct {
 
 	periodicMu     sync.Mutex
 	periodicCancel context.CancelFunc
+
+	// Callback for device discovery events (e.g., for UPnP event subscriptions)
+	discoveryCallbackMu sync.RWMutex
+	discoveryCallback   DeviceDiscoveryCallback
 }
 
 func NewService(cfg config.Config, logger *log.Logger, soapClient *soap.Client) *Service {
@@ -192,6 +206,40 @@ func (service *Service) StopPeriodicDiscovery() {
 	}
 }
 
+// SetDiscoveryCallback sets a callback to be invoked when devices are discovered.
+// This is used by the UPnP event manager to subscribe to device events.
+func (service *Service) SetDiscoveryCallback(callback DeviceDiscoveryCallback) {
+	service.discoveryCallbackMu.Lock()
+	defer service.discoveryCallbackMu.Unlock()
+	service.discoveryCallback = callback
+}
+
+// notifyDiscoveryCallback calls the registered callback with discovered devices.
+func (service *Service) notifyDiscoveryCallback(devices []LogicalDevice) {
+	service.discoveryCallbackMu.RLock()
+	callback := service.discoveryCallback
+	service.discoveryCallbackMu.RUnlock()
+
+	if callback == nil {
+		return
+	}
+
+	// Extract device info for callback
+	infos := make([]DeviceInfo, 0, len(devices))
+	for _, device := range devices {
+		if device.IP != "" && device.UDN != "" {
+			infos = append(infos, DeviceInfo{
+				IP:  device.IP,
+				UDN: device.UDN,
+			})
+		}
+	}
+
+	if len(infos) > 0 {
+		callback(infos)
+	}
+}
+
 func (service *Service) IsHealthy() bool {
 	service.topologyMu.RLock()
 	defer service.topologyMu.RUnlock()
@@ -315,7 +363,11 @@ func (service *Service) runDiscovery() discoveryResult {
 	service.topologyMu.Lock()
 	merged := mergeTopologies(newTopology, service.topology)
 	service.topology = &merged
+	topologyDevices := merged.Devices // Copy for callback outside lock
 	service.topologyMu.Unlock()
+
+	// Notify discovery callback (e.g., for UPnP event subscriptions)
+	service.notifyDiscoveryCallback(topologyDevices)
 
 	return discoveryResult{
 		devices:    len(service.topology.Devices),
