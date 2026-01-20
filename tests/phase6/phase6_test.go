@@ -93,8 +93,8 @@ func TestSceneCRUD(t *testing.T) {
 		"name":        "Morning Music",
 		"description": "Wake up playlist",
 		"members": []map[string]any{
-			{"device_id": "device-123", "target_volume": 40},
-			{"device_id": "device-456", "room_name": "Kitchen"},
+			{"udn": "RINCON_TEST123456789", "target_volume": 40},
+			{"udn": "RINCON_TEST987654321", "room_name": "Kitchen"},
 		},
 		"volume_ramp": map[string]any{
 			"enabled":     true,

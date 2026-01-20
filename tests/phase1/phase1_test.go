@@ -20,9 +20,9 @@ import (
 
 // Stripe-style list response for devices
 type devicesResponse struct {
-	Object  string `json:"object"`
-	Data    []struct {
-		DeviceID string `json:"device_id"`
+	Object string `json:"object"`
+	Data   []struct {
+		UDN      string `json:"udn"`
 		RoomName string `json:"room_name"`
 	} `json:"data"`
 	HasMore bool   `json:"has_more"`
@@ -53,16 +53,16 @@ func TestPhase1Devices(t *testing.T) {
 	testClient := &http.Client{Timeout: 20 * time.Second}
 	require.NoError(t, triggerRescan(testClient, ts.URL))
 
-	deviceID := os.Getenv("SONOS_TEST_DEVICE_ID")
-	if deviceID == "" {
-		deviceID = "Home Theater"
+	deviceName := os.Getenv("SONOS_TEST_DEVICE_ID")
+	if deviceName == "" {
+		deviceName = "Home Theater"
 	}
 
-	device := waitForDevice(t, testClient, ts.URL, deviceID, 60*time.Second)
-	require.NotEmpty(t, device.DeviceID)
-	require.Equal(t, deviceID, device.RoomName)
+	device := waitForDevice(t, testClient, ts.URL, deviceName, 60*time.Second)
+	require.NotEmpty(t, device.UDN)
+	require.Equal(t, deviceName, device.RoomName)
 
-	resp, err := doRequest(testClient, http.MethodGet, ts.URL+"/v1/devices/"+device.DeviceID, nil)
+	resp, err := doRequest(testClient, http.MethodGet, ts.URL+"/v1/devices/"+device.UDN, nil)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
@@ -80,8 +80,8 @@ func triggerRescan(client *http.Client, baseURL string) error {
 	return nil
 }
 
-func waitForDevice(t *testing.T, client *http.Client, baseURL string, deviceID string, timeout time.Duration) struct {
-	DeviceID string
+func waitForDevice(t *testing.T, client *http.Client, baseURL string, deviceName string, timeout time.Duration) struct {
+	UDN      string
 	RoomName string
 } {
 	t.Helper()
@@ -102,20 +102,20 @@ func waitForDevice(t *testing.T, client *http.Client, baseURL string, deviceID s
 		require.NoError(t, err)
 
 		for _, device := range payload.Data {
-			if device.RoomName == deviceID || device.DeviceID == deviceID {
+			if device.RoomName == deviceName || device.UDN == deviceName {
 				return struct {
-					DeviceID string
+					UDN      string
 					RoomName string
-				}{DeviceID: device.DeviceID, RoomName: device.RoomName}
+				}{UDN: device.UDN, RoomName: device.RoomName}
 			}
 		}
 
 		time.Sleep(2 * time.Second)
 	}
 
-	t.Fatalf("device %q not discovered within timeout", deviceID)
+	t.Fatalf("device %q not discovered within timeout", deviceName)
 	return struct {
-		DeviceID string
+		UDN      string
 		RoomName string
 	}{}
 }

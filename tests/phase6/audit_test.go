@@ -82,7 +82,7 @@ func TestAuditRecordEventWithAllFields(t *testing.T) {
 	jobID := "job-123"
 	routineID := "routine-456"
 	sceneExecID := "exec-789"
-	deviceID := "device-abc"
+	udn := "RINCON_TEST123456789"
 	requestID := "req-xyz"
 
 	createPayload := map[string]any{
@@ -93,7 +93,7 @@ func TestAuditRecordEventWithAllFields(t *testing.T) {
 			"job_id":             jobID,
 			"routine_id":         routineID,
 			"scene_execution_id": sceneExecID,
-			"device_id":          deviceID,
+			"udn":                udn,
 			"request_id":         requestID,
 		},
 		"payload": map[string]any{
@@ -120,7 +120,7 @@ func TestAuditRecordEventWithAllFields(t *testing.T) {
 	require.Equal(t, jobID, correlation["job_id"])
 	require.Equal(t, routineID, correlation["routine_id"])
 	require.Equal(t, sceneExecID, correlation["scene_execution_id"])
-	require.Equal(t, deviceID, correlation["device_id"])
+	require.Equal(t, udn, correlation["udn"])
 
 	// Verify payload
 	payload := createResp["payload"].(map[string]any)
@@ -328,7 +328,7 @@ func TestAuditQueryWithCorrelationIDFilters(t *testing.T) {
 		{"type": "JOB_STARTED", "message": "Job event", "correlation": map[string]any{"job_id": jobID}},
 		{"type": "ROUTINE_CREATED", "message": "Routine event", "correlation": map[string]any{"routine_id": routineID}},
 		{"type": "SCENE_EXECUTION_STARTED", "message": "Scene exec event", "correlation": map[string]any{"scene_execution_id": sceneExecID}},
-		{"type": "DEVICE_DISCOVERED", "message": "Device event", "correlation": map[string]any{"device_id": deviceID}},
+		{"type": "DEVICE_DISCOVERED", "message": "Device event", "correlation": map[string]any{"udn": deviceID}},
 	}
 
 	for _, payload := range payloads {
@@ -371,15 +371,15 @@ func TestAuditQueryWithCorrelationIDFilters(t *testing.T) {
 		require.Equal(t, sceneExecID, correlation["scene_execution_id"])
 	}
 
-	// Test device_id filter
-	resp = doAuditRequest(t, http.MethodGet, ts.URL+"/v1/audit/events?device_id="+deviceID, nil)
+	// Test udn filter
+	resp = doAuditRequest(t, http.MethodGet, ts.URL+"/v1/audit/events?udn="+deviceID, nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&listResp))
 	resp.Body.Close()
 	require.GreaterOrEqual(t, len(listResp.Data), 1)
 	for _, event := range listResp.Data {
 		correlation := event["correlation"].(map[string]any)
-		require.Equal(t, deviceID, correlation["device_id"])
+		require.Equal(t, deviceID, correlation["udn"])
 	}
 }
 

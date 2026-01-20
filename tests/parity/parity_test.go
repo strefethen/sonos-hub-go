@@ -142,6 +142,10 @@ func getFirstDeviceID(t *testing.T, baseURL string) string {
 	if len(devices) == 0 {
 		t.Skip("No devices available for device-dependent test")
 	}
+	// Go uses "udn", Node.js uses "device_id"
+	if id := getFirstID(t, devices, "udn"); id != "" {
+		return id
+	}
 	return getFirstID(t, devices, "device_id")
 }
 
@@ -402,7 +406,7 @@ func TestDeviceListParity(t *testing.T) {
 
 	require.Equal(t, len(nodeDevices), len(goDevices), "device count mismatch")
 
-	// Build map by device_id (Node.js still uses device_id, Go uses id)
+	// Build map by device_id (Node.js uses device_id, Go uses udn - same value)
 	nodeByID := make(map[string]map[string]any)
 	for _, d := range nodeDevices {
 		device := d.(map[string]any)
@@ -412,13 +416,13 @@ func TestDeviceListParity(t *testing.T) {
 	// Compare each Go device to Node device
 	for _, d := range goDevices {
 		goDevice := d.(map[string]any)
-		deviceID := goDevice["id"].(string)
-		nodeDevice, exists := nodeByID[deviceID]
-		require.True(t, exists, "Go has device %s not in Node.js", deviceID)
+		udn := goDevice["udn"].(string)
+		nodeDevice, exists := nodeByID[udn]
+		require.True(t, exists, "Go has device %s not in Node.js", udn)
 
-		require.Equal(t, nodeDevice["room_name"], goDevice["room_name"], "room_name mismatch for %s", deviceID)
-		require.Equal(t, nodeDevice["model"], goDevice["model"], "model mismatch for %s", deviceID)
-		require.Equal(t, nodeDevice["ip"], goDevice["ip"], "ip mismatch for %s", deviceID)
+		require.Equal(t, nodeDevice["room_name"], goDevice["room_name"], "room_name mismatch for %s", udn)
+		require.Equal(t, nodeDevice["model"], goDevice["model"], "model mismatch for %s", udn)
+		require.Equal(t, nodeDevice["ip"], goDevice["ip"], "ip mismatch for %s", udn)
 	}
 }
 
@@ -605,11 +609,11 @@ func TestAuditEventsListParity(t *testing.T) {
 }
 
 func TestSonosPlayersListParity(t *testing.T) {
-	// Endpoint requires device_id parameter
+	// Endpoint requires udn parameter (Go) / device_id parameter (Node.js)
 	deviceID := getFirstDeviceID(t, NodeJSBaseURL)
 
 	nodeResp := fetchJSON(t, NodeJSBaseURL+"/v1/sonos/players?device_id="+deviceID)
-	goResp := fetchJSON(t, GoBaseURL+"/v1/sonos/players?device_id="+deviceID)
+	goResp := fetchJSON(t, GoBaseURL+"/v1/sonos/players?udn="+deviceID)
 
 	nodePlayers := extractListData(nodeResp, "players")
 	goPlayers := extractListData(goResp, "players")
@@ -622,12 +626,12 @@ func TestSonosPlayersListParity(t *testing.T) {
 // ============================================================================
 
 func TestDeviceByIDParity(t *testing.T) {
-	// Get a device ID from the list
+	// Get a device ID (UDN) from the list - Node uses device_id field, Go uses udn field
 	nodeListResp := fetchJSON(t, NodeJSBaseURL+"/v1/devices")
 	nodeDevices := extractListData(nodeListResp, "devices")
 	deviceID := getFirstID(t, nodeDevices, "device_id")
 
-	// Fetch single device from both
+	// Fetch single device from both (path param uses the UDN value)
 	nodeResp := fetchJSON(t, NodeJSBaseURL+"/v1/devices/"+deviceID)
 	goResp := fetchJSON(t, GoBaseURL+"/v1/devices/"+deviceID)
 
@@ -637,7 +641,8 @@ func TestDeviceByIDParity(t *testing.T) {
 	require.NotNil(t, nodeDevice, "Node.js device is nil")
 	require.NotNil(t, goDevice, "Go device is nil")
 
-	require.Equal(t, nodeDevice["device_id"], goDevice["device_id"], "device_id mismatch")
+	// Node uses device_id, Go uses udn - same value, different field name
+	require.Equal(t, nodeDevice["device_id"], goDevice["udn"], "device identifier mismatch")
 	require.Equal(t, nodeDevice["room_name"], goDevice["room_name"], "room_name mismatch")
 	require.Equal(t, nodeDevice["model"], goDevice["model"], "model mismatch")
 }
@@ -825,7 +830,7 @@ func TestSonosPlaybackStateParity(t *testing.T) {
 	deviceID := getFirstDeviceID(t, NodeJSBaseURL)
 
 	nodeResp, nodeStatus := fetchJSONWithStatus(t, NodeJSBaseURL+"/v1/sonos/playback/state?device_id="+deviceID)
-	goResp, goStatus := fetchJSONWithStatus(t, GoBaseURL+"/v1/sonos/playback/state?device_id="+deviceID)
+	goResp, goStatus := fetchJSONWithStatus(t, GoBaseURL+"/v1/sonos/playback/state?udn="+deviceID)
 
 	// Both should return same status code
 	require.Equal(t, nodeStatus, goStatus, "status code mismatch")
@@ -841,7 +846,7 @@ func TestSonosNowPlayingParity(t *testing.T) {
 	deviceID := getFirstDeviceID(t, NodeJSBaseURL)
 
 	nodeResp, nodeStatus := fetchJSONWithStatus(t, NodeJSBaseURL+"/v1/sonos/playback/now-playing?device_id="+deviceID)
-	goResp, goStatus := fetchJSONWithStatus(t, GoBaseURL+"/v1/sonos/playback/now-playing?device_id="+deviceID)
+	goResp, goStatus := fetchJSONWithStatus(t, GoBaseURL+"/v1/sonos/playback/now-playing?udn="+deviceID)
 
 	require.Equal(t, nodeStatus, goStatus, "status code mismatch")
 	if nodeStatus != http.StatusOK {
@@ -856,7 +861,7 @@ func TestSonosGroupsParity(t *testing.T) {
 	deviceID := getFirstDeviceID(t, NodeJSBaseURL)
 
 	nodeResp, nodeStatus := fetchJSONWithStatus(t, NodeJSBaseURL+"/v1/sonos/groups?device_id="+deviceID)
-	goResp, goStatus := fetchJSONWithStatus(t, GoBaseURL+"/v1/sonos/groups?device_id="+deviceID)
+	goResp, goStatus := fetchJSONWithStatus(t, GoBaseURL+"/v1/sonos/groups?udn="+deviceID)
 
 	require.Equal(t, nodeStatus, goStatus, "status code mismatch")
 	if nodeStatus != http.StatusOK {
@@ -873,7 +878,7 @@ func TestSonosAlarmsParity(t *testing.T) {
 	deviceID := getFirstDeviceID(t, NodeJSBaseURL)
 
 	nodeResp, nodeStatus := fetchJSONWithStatus(t, NodeJSBaseURL+"/v1/sonos/alarms?device_id="+deviceID)
-	goResp, goStatus := fetchJSONWithStatus(t, GoBaseURL+"/v1/sonos/alarms?device_id="+deviceID)
+	goResp, goStatus := fetchJSONWithStatus(t, GoBaseURL+"/v1/sonos/alarms?udn="+deviceID)
 
 	require.Equal(t, nodeStatus, goStatus, "status code mismatch")
 	if nodeStatus != http.StatusOK {
@@ -887,7 +892,7 @@ func TestSonosAlarmsParity(t *testing.T) {
 }
 
 func TestSonosPlayerStateParity(t *testing.T) {
-	// Get a device ID first, then get players with that device_id
+	// Get a device ID first, then get players with that udn
 	deviceID := getFirstDeviceID(t, NodeJSBaseURL)
 
 	nodePlayersResp := fetchJSON(t, NodeJSBaseURL+"/v1/sonos/players?device_id="+deviceID)
@@ -911,7 +916,7 @@ func TestSonosPlayerStateParity(t *testing.T) {
 }
 
 func TestSonosPlayerTVStatusParity(t *testing.T) {
-	// Get a device ID first, then get players with that device_id
+	// Get a device ID first, then get players with that udn
 	deviceID := getFirstDeviceID(t, NodeJSBaseURL)
 
 	nodePlayersResp := fetchJSON(t, NodeJSBaseURL+"/v1/sonos/players?device_id="+deviceID)
@@ -938,7 +943,7 @@ func TestSonosServicesParity(t *testing.T) {
 	deviceID := getFirstDeviceID(t, NodeJSBaseURL)
 
 	nodeResp, nodeStatus := fetchJSONWithStatus(t, NodeJSBaseURL+"/v1/sonos/services?device_id="+deviceID)
-	goResp, goStatus := fetchJSONWithStatus(t, GoBaseURL+"/v1/sonos/services?device_id="+deviceID)
+	goResp, goStatus := fetchJSONWithStatus(t, GoBaseURL+"/v1/sonos/services?udn="+deviceID)
 
 	require.Equal(t, nodeStatus, goStatus, "status code mismatch")
 	if nodeStatus != http.StatusOK {
