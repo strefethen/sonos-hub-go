@@ -139,8 +139,9 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 		sonoscloud.RegisterRoutes(router, sonosCloudClient)
 	}
 
-	// Serve static files
-	router.Handle("/v1/assets/*", http.StripPrefix("/v1/assets/", http.FileServer(http.Dir("./assets"))))
+	// Serve static files with caching headers (matching Node.js behavior)
+	fileServer := http.FileServer(http.Dir("./assets"))
+	router.Handle("/v1/assets/*", http.StripPrefix("/v1/assets/", staticFileHandler(fileServer)))
 
 	shutdown := func(ctx context.Context) error {
 		shutdownCancel()
@@ -154,6 +155,17 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 	}
 
 	return router, shutdown, nil
+}
+
+// staticFileHandler wraps a file server with caching headers matching Node.js behavior
+func staticFileHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Set caching headers for static assets (1 year cache)
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func registerHealthRoutes(router chi.Router) {
