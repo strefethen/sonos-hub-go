@@ -36,6 +36,14 @@ type Config struct {
 	UPnPEventsEnabled          bool
 	UPnPSubscriptionTimeoutSec int
 	UPnPStateCacheTTLSeconds   int
+
+	// Apple Music API settings
+	AppleTeamID          string // Apple Developer Team ID
+	AppleKeyID           string // Apple Music Key ID
+	ApplePrivateKeyPath  string // Path to .p8 private key file
+	AppleTokenExpirySec  int    // Token TTL in seconds (max 15552000 = 6 months)
+	AppleMusicAPIURL     string // Apple Music API base URL
+	DefaultStorefront    string // Apple Music storefront (country code)
 }
 
 // Load reads configuration from environment variables with defaults.
@@ -72,6 +80,14 @@ func Load() (Config, error) {
 	upnpSubscriptionTimeout := envInt("UPNP_SUBSCRIPTION_TIMEOUT", 3600)
 	upnpStateCacheTTL := envInt("UPNP_STATE_CACHE_TTL_SECONDS", 30)
 
+	// Apple Music settings (all optional - service disabled if team ID empty)
+	appleTeamID := envString("APPLE_TEAM_ID", "")
+	appleKeyID := envString("APPLE_KEY_ID", "")
+	applePrivateKeyPath := envString("APPLE_PRIVATE_KEY_PATH", "")
+	appleTokenExpiry := envInt("APPLE_TOKEN_EXPIRY_SECONDS", 86400) // Default 24 hours
+	appleMusicAPIURL := envString("APPLE_MUSIC_API_URL", "https://api.music.apple.com")
+	defaultStorefront := envString("DEFAULT_STOREFRONT", "us")
+
 	if len(strings.TrimSpace(jwtSecret)) < 32 {
 		return Config{}, fmt.Errorf("JWT_SECRET must be at least 32 characters")
 	}
@@ -99,6 +115,12 @@ func Load() (Config, error) {
 		UPnPEventsEnabled:          upnpEventsEnabled,
 		UPnPSubscriptionTimeoutSec: upnpSubscriptionTimeout,
 		UPnPStateCacheTTLSeconds:   upnpStateCacheTTL,
+		AppleTeamID:                appleTeamID,
+		AppleKeyID:                 appleKeyID,
+		ApplePrivateKeyPath:        applePrivateKeyPath,
+		AppleTokenExpirySec:        appleTokenExpiry,
+		AppleMusicAPIURL:           appleMusicAPIURL,
+		DefaultStorefront:          defaultStorefront,
 	}, nil
 }
 
