@@ -169,7 +169,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DeviceTopologyResponse' }
-  /v1/devices/{device_id}:
+  /v1/devices/{udn}:
     get:
       operationId: getDevice
       tags: [devices]
@@ -177,7 +177,7 @@ paths:
       description: Retrieve detailed information about a specific device
       parameters:
         - in: path
-          name: device_id
+          name: udn
           description: Unique device identifier
           required: true
           schema: { type: string }
@@ -204,7 +204,7 @@ paths:
       description: Get all configured alarms for a Sonos device
       parameters:
         - in: query
-          name: device_id
+          name: udn
           description: Target device identifier
           required: true
           schema: { type: string }
@@ -244,7 +244,7 @@ paths:
       description: Get all speaker groups for a device
       parameters:
         - in: query
-          name: device_id
+          name: udn
           description: Device identifier to query groups from
           required: true
           schema: { type: string }
@@ -382,7 +382,7 @@ paths:
       description: Get information about the currently playing track for a device/group
       parameters:
         - in: query
-          name: device_id
+          name: udn
           description: Device identifier to query now playing from
           required: true
           schema: { type: string }
@@ -451,7 +451,7 @@ paths:
       description: Get the current transport state (playing, paused, stopped) for a device
       parameters:
         - in: query
-          name: device_id
+          name: udn
           description: Device identifier to query state from
           required: true
           schema: { type: string }
@@ -486,7 +486,7 @@ paths:
       description: List all Sonos players visible to a device
       parameters:
         - in: query
-          name: device_id
+          name: udn
           description: Device identifier to query players from
           required: true
           schema: { type: string }
@@ -496,7 +496,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SonosPlayersResponse' }
-  /v1/sonos/players/{device_id}/state:
+  /v1/sonos/players/{udn}/state:
     get:
       operationId: getPlayerState
       tags: [sonos]
@@ -504,7 +504,7 @@ paths:
       description: Get detailed state information for a specific player
       parameters:
         - in: path
-          name: device_id
+          name: udn
           description: Target player device identifier
           required: true
           schema: { type: string }
@@ -514,7 +514,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SonosPlayerStateResponse' }
-  /v1/sonos/players/{device_id}/tv-status:
+  /v1/sonos/players/{udn}/tv-status:
     get:
       operationId: getTvStatus
       tags: [sonos]
@@ -522,7 +522,7 @@ paths:
       description: Check if TV audio is currently active on a player (for Arc/Beam/Playbar)
       parameters:
         - in: path
-          name: device_id
+          name: udn
           description: Target player device identifier
           required: true
           schema: { type: string }
@@ -1650,7 +1650,7 @@ paths:
           description: Filter by scene execution ID
           schema: { type: string }
         - in: query
-          name: device_id
+          name: udn
           description: Filter by device ID
           schema: { type: string }
         - in: query
@@ -2141,7 +2141,7 @@ components:
       type: object
       required:
         [
-          device_id,
+          udn,
           room_name,
           ip,
           role,
@@ -2154,7 +2154,7 @@ components:
           physical_device_count
         ]
       properties:
-        device_id: { type: string }
+        udn: { type: string }
         udn: { type: string, nullable: true }
         room_name: { type: string }
         ip: { type: string }
@@ -2174,7 +2174,7 @@ components:
       type: object
       required:
         [
-          device_id,
+          udn,
           udn,
           model,
           model_number,
@@ -2185,7 +2185,7 @@ components:
           last_seen_at
         ]
       properties:
-        device_id: { type: string }
+        udn: { type: string }
         udn: { type: string }
         model: { type: string }
         model_number: { type: string }
@@ -2409,9 +2409,9 @@ components:
           type: array
           items:
             type: object
-            required: [device_id, target_volume]
+            required: [udn, target_volume]
             properties:
-              device_id: { type: string }
+              udn: { type: string }
               target_volume: { type: integer }
               mute: { type: boolean }
         coordinator_preference: { type: string, default: ARC_FIRST }
@@ -2447,9 +2447,9 @@ components:
 
     SceneMember:
       type: object
-      required: [device_id]
+      required: [udn]
       properties:
-        device_id: { type: string }
+        udn: { type: string }
         room_name:
           type: string
           nullable: true
@@ -2560,7 +2560,7 @@ components:
           scene_execution_id,
           scene_id,
           idempotency_key,
-          coordinator_used_device_id,
+          coordinator_used_udn,
           status,
           started_at,
           ended_at,
@@ -2574,7 +2574,7 @@ components:
         idempotency_key:
           type: string
           nullable: true
-        coordinator_used_device_id:
+        coordinator_used_udn:
           type: string
           nullable: true
         status:
@@ -2665,9 +2665,9 @@ components:
               type: array
               items:
                 type: object
-                required: [device_id, success]
+                required: [udn, success]
                 properties:
-                  device_id: { type: string }
+                  udn: { type: string }
                   success: { type: boolean }
                   error:
                     type: string
@@ -2840,7 +2840,7 @@ components:
       type: object
       properties:
         override_room: { type: string }
-        override_device_ids:
+        override_udns:
           type: array
           items: { type: string }
     RoutineRunResponse:
@@ -2857,7 +2857,7 @@ components:
             scene_execution_id: { type: string }
             status: { type: string }
             override_room: { type: string }
-            override_device_ids:
+            override_udns:
               type: array
               items: { type: string }
     RoutineSkipResponse:
@@ -3096,7 +3096,7 @@ components:
         level: { type: string }
         correlation:
           type: object
-          required: [request_id, routine_id, job_id, scene_execution_id, device_id]
+          required: [request_id, routine_id, job_id, scene_execution_id, udn]
           properties:
             request_id:
               type: string
@@ -3110,7 +3110,7 @@ components:
             scene_execution_id:
               type: string
               nullable: true
-            device_id:
+            udn:
               type: string
               nullable: true
         message: { type: string }
@@ -3158,7 +3158,7 @@ components:
             routine_id: { type: string }
             job_id: { type: string }
             scene_execution_id: { type: string }
-            device_id: { type: string }
+            udn: { type: string }
         payload:
           type: object
           additionalProperties: true
@@ -3242,12 +3242,12 @@ components:
       type: object
       required: [content]
       properties:
-        device_id:
+        udn:
           type: string
           description: Device ID (from device-registry)
         ip:
           type: string
-          description: Device IP address (alternative to device_id)
+          description: Device IP address (alternative to udn)
         content:
           $ref: '#/components/schemas/MusicContent'
         queue_mode:
@@ -3262,9 +3262,9 @@ components:
         request_id: { type: string }
         result:
           type: object
-          required: [device_id, queue_mode, group_behavior, was_ungrouped, started_at]
+          required: [udn, queue_mode, group_behavior, was_ungrouped, started_at]
           properties:
-            device_id: { type: string }
+            udn: { type: string }
             queue_mode: { $ref: '#/components/schemas/QueueMode' }
             group_behavior: { $ref: '#/components/schemas/GroupBehavior' }
             was_ungrouped: { type: boolean }
@@ -3278,9 +3278,9 @@ components:
 
     SonosPlaybackActionRequest:
       type: object
-      required: [device_id]
+      required: [udn]
       properties:
-        device_id: { type: string }
+        udn: { type: string }
 
     SonosPlaybackActionResponse:
       type: object
@@ -3289,9 +3289,9 @@ components:
         request_id: { type: string }
         result:
           type: object
-          required: [device_id, action]
+          required: [udn, action]
           properties:
-            device_id: { type: string }
+            udn: { type: string }
             action: { type: string }
             stopped_at: { type: string, format: date-time }
             paused_at: { type: string, format: date-time }
@@ -3305,9 +3305,9 @@ components:
         request_id: { type: string }
         playback_state:
           type: object
-          required: [device_id, state, status, speed]
+          required: [udn, state, status, speed]
           properties:
-            device_id: { type: string }
+            udn: { type: string }
             state: { type: string }
             status: { type: string }
             speed: { type: string }
@@ -3401,7 +3401,7 @@ components:
     SonosPlayRequest:
       type: object
       properties:
-        coordinator_device_id: { type: string }
+        coordinator_udn: { type: string }
         ip: { type: string }
 
     SonosPlayResponse:
@@ -3413,7 +3413,7 @@ components:
           type: object
           required: [ip, started_at]
           properties:
-            coordinator_device_id:
+            coordinator_udn:
               type: string
               nullable: true
             ip: { type: string }
@@ -3423,7 +3423,7 @@ components:
       type: object
       required: [favorite_id]
       properties:
-        device_id: { type: string }
+        udn: { type: string }
         ip: { type: string }
         favorite_id: { type: string }
         group_behavior: { $ref: '#/components/schemas/GroupBehavior' }
@@ -3437,7 +3437,7 @@ components:
           type: object
           required:
             [
-              device_id,
+              udn,
               favorite_id,
               favorite_title,
               content_type,
@@ -3446,7 +3446,7 @@ components:
               was_ungrouped
             ]
           properties:
-            device_id: { type: string }
+            udn: { type: string }
             favorite_id: { type: string }
             favorite_title: { type: string }
             content_type: { type: string }
@@ -3456,9 +3456,9 @@ components:
 
     SonosVolumeRequest:
       type: object
-      required: [device_id, volume]
+      required: [udn, volume]
       properties:
-        device_id: { type: string }
+        udn: { type: string }
         volume: { type: integer }
         ramp:
           type: object
@@ -3475,9 +3475,9 @@ components:
         result:
           type: object
           required:
-            [device_id, volume, previous_volume, ramped, all_succeeded, succeeded_count, failed_count]
+            [udn, volume, previous_volume, ramped, all_succeeded, succeeded_count, failed_count]
           properties:
-            device_id: { type: string }
+            udn: { type: string }
             volume: { type: integer }
             previous_volume: { type: integer }
             ramped: { type: boolean }
@@ -3487,9 +3487,9 @@ components:
 
     SonosVolumeSetRequest:
       type: object
-      required: [device_id, level]
+      required: [udn, level]
       properties:
-        device_id: { type: string }
+        udn: { type: string }
         level: { type: integer }
 
     SonosVolumeSetResponse:
@@ -3500,9 +3500,9 @@ components:
         result:
           type: object
           required:
-            [device_id, level, previous_level, all_succeeded, succeeded_count, failed_count]
+            [udn, level, previous_level, all_succeeded, succeeded_count, failed_count]
           properties:
-            device_id: { type: string }
+            udn: { type: string }
             level: { type: integer }
             previous_level: { type: integer }
             all_succeeded: { type: boolean }
@@ -3511,9 +3511,9 @@ components:
 
     SonosVolumeRampRequest:
       type: object
-      required: [device_id, target_level]
+      required: [udn, target_level]
       properties:
-        device_id: { type: string }
+        udn: { type: string }
         target_level: { type: integer }
         duration_ms: { type: integer }
         curve: { type: string, enum: [linear, ease-in, ease-out] }
@@ -3527,7 +3527,7 @@ components:
           type: object
           required:
             [
-              device_id,
+              udn,
               start_level,
               target_level,
               duration_ms,
@@ -3537,7 +3537,7 @@ components:
               failed_count
             ]
           properties:
-            device_id: { type: string }
+            udn: { type: string }
             start_level: { type: integer }
             target_level: { type: integer }
             duration_ms: { type: integer }
@@ -3572,10 +3572,10 @@ components:
 
     SonosGroupCreateRequest:
       type: object
-      required: [coordinator_device_id]
+      required: [coordinator_udn]
       properties:
-        coordinator_device_id: { type: string }
-        member_device_ids:
+        coordinator_udn: { type: string }
+        member_udns:
           type: array
           items: { type: string }
 
@@ -3587,9 +3587,9 @@ components:
         result:
           type: object
           required:
-            [coordinator_device_id, coordinator_uuid, coordinator_name, member_results, all_succeeded]
+            [coordinator_udn, coordinator_uuid, coordinator_name, member_results, all_succeeded]
           properties:
-            coordinator_device_id: { type: string }
+            coordinator_udn: { type: string }
             coordinator_uuid:
               type: string
               nullable: true
@@ -3600,9 +3600,9 @@ components:
               type: array
               items:
                 type: object
-                required: [device_id, success]
+                required: [udn, success]
                 properties:
-                  device_id: { type: string }
+                  udn: { type: string }
                   success: { type: boolean }
                   error:
                     type: string
@@ -3612,7 +3612,7 @@ components:
     SonosUngroupRequest:
       type: object
       properties:
-        device_ids:
+        udns:
           type: array
           items: { type: string }
         ips:
@@ -3632,9 +3632,9 @@ components:
               type: array
               items:
                 type: object
-                required: [device_id, success]
+                required: [udn, success]
                 properties:
-                  device_id: { type: string }
+                  udn: { type: string }
                   success: { type: boolean }
                   error:
                     type: string
@@ -3673,9 +3673,9 @@ components:
         request_id: { type: string }
         player_state:
           type: object
-          required: [device_id, transport_state, transport_status, volume, muted, current_track]
+          required: [udn, transport_state, transport_status, volume, muted, current_track]
           properties:
-            device_id: { type: string }
+            udn: { type: string }
             transport_state: { type: string }
             transport_status: { type: string }
             volume: { type: integer }
@@ -3700,9 +3700,9 @@ components:
         tv_status:
           type: object
           required:
-            [device_id, is_tv_active, confidence, source, transport_state, current_uri, last_checked_at]
+            [udn, is_tv_active, confidence, source, transport_state, current_uri, last_checked_at]
           properties:
-            device_id: { type: string }
+            udn: { type: string }
             is_tv_active: { type: boolean }
             confidence: { type: string, enum: [HIGH, MEDIUM, LOW] }
             source: { type: string, enum: [tv, line-in, music, idle] }
@@ -3856,9 +3856,9 @@ components:
     # Routine Supporting Schemas
     RoutineSpeaker:
       type: object
-      required: [device_id]
+      required: [udn]
       properties:
-        device_id:
+        udn:
           type: string
           description: Device ID (UUID v5 based on UDN)
         volume:
@@ -3869,9 +3869,9 @@ components:
 
     RoutineSpeakerOutput:
       type: object
-      required: [device_id, volume, room_name]
+      required: [udn, volume, room_name]
       properties:
-        device_id: { type: string }
+        udn: { type: string }
         volume:
           type: integer
           nullable: true
@@ -3970,10 +3970,10 @@ components:
 
     TVRoutingSettings:
       type: object
-      required: [enabled, default_fallback_device_id, default_policy]
+      required: [enabled, default_fallback_udn, default_policy]
       properties:
         enabled: { type: boolean }
-        default_fallback_device_id:
+        default_fallback_udn:
           type: string
           nullable: true
         default_policy:
@@ -3984,7 +3984,7 @@ components:
       type: object
       properties:
         enabled: { type: boolean }
-        default_fallback_device_id:
+        default_fallback_udn:
           type: string
           nullable: true
         default_policy:
