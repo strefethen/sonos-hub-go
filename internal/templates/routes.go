@@ -227,8 +227,9 @@ func formatTemplate(t *RoutineTemplate) map[string]any {
 	if t.Icon != nil {
 		result["icon"] = *t.Icon
 	}
-	if t.ImageName != nil {
+	if t.ImageName != nil && *t.ImageName != "" {
 		result["image_name"] = *t.ImageName
+		result["image_url"] = "/v1/assets/templates/" + *t.ImageName + ".jpg"
 	}
 	if t.GradientColor1 != nil {
 		result["gradient_color_1"] = *t.GradientColor1
