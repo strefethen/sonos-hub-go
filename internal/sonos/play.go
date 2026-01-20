@@ -12,21 +12,21 @@ import (
 
 // PlayRequest represents a request to resume playback
 type PlayRequest struct {
-	CoordinatorDeviceID *string `json:"coordinator_device_id"`
-	IP                  *string `json:"ip"`
+	CoordinatorUDN *string `json:"coordinator_udn"`
+	IP             *string `json:"ip"`
 }
 
 // PlayResponse represents the response from a play request
 type PlayResponse struct {
-	Object              string    `json:"object"`
-	CoordinatorDeviceID *string   `json:"coordinator_device_id,omitempty"`
-	IP                  string    `json:"ip"`
-	StartedAt           time.Time `json:"started_at"`
+	Object         string    `json:"object"`
+	CoordinatorUDN *string   `json:"coordinator_udn,omitempty"`
+	IP             string    `json:"ip"`
+	StartedAt      time.Time `json:"started_at"`
 }
 
 // PlayFavoriteRequest represents a request to play a Sonos favorite
 type PlayFavoriteRequest struct {
-	DeviceID      *string `json:"device_id"`
+	UDN           *string `json:"udn"`
 	IP            *string `json:"ip"`
 	FavoriteID    string  `json:"favorite_id"`
 	GroupBehavior *string `json:"group_behavior"` // UNGROUP_AND_PLAY, AUTO_REDIRECT
@@ -35,7 +35,7 @@ type PlayFavoriteRequest struct {
 // PlayFavoriteResponse represents the response from playing a favorite
 type PlayFavoriteResponse struct {
 	Object         string    `json:"object"`
-	DeviceID       string    `json:"device_id"`
+	UDN            string    `json:"udn"`
 	FavoriteID     string    `json:"favorite_id"`
 	FavoriteTitle  string    `json:"favorite_title"`
 	ContentType    string    `json:"content_type"`
@@ -46,7 +46,7 @@ type PlayFavoriteResponse struct {
 
 // PlayContentRequest represents a request to play direct content
 type PlayContentRequest struct {
-	DeviceID      *string      `json:"device_id"`
+	UDN           *string      `json:"udn"`
 	IP            *string      `json:"ip"`
 	Content       MusicContent `json:"content"`
 	QueueMode     *string      `json:"queue_mode"`     // REPLACE_AND_PLAY, PLAY_NEXT, ADD_TO_END, QUEUE_ONLY
@@ -56,7 +56,7 @@ type PlayContentRequest struct {
 // PlayContentResponse represents the response from playing content
 type PlayContentResponse struct {
 	Object        string    `json:"object"`
-	DeviceID      string    `json:"device_id"`
+	UDN           string    `json:"udn"`
 	QueueMode     string    `json:"queue_mode"`
 	GroupBehavior string    `json:"group_behavior"`
 	WasUngrouped  bool      `json:"was_ungrouped"`
@@ -70,8 +70,8 @@ type PlayContentResponse struct {
 
 // ValidateContentRequest represents a request to validate content
 type ValidateContentRequest struct {
-	Content  MusicContent `json:"content"`
-	DeviceID *string      `json:"device_id"`
+	Content MusicContent `json:"content"`
+	UDN     *string      `json:"udn"`
 }
 
 // Queue mode constants
@@ -109,34 +109,34 @@ func NewPlayService(soapClient *soap.Client, deviceService *devices.Service, tim
 }
 
 // resolveDeviceIP resolves the IP address for a device
-func (s *PlayService) resolveDeviceIP(deviceID *string, ip *string) (string, string, error) {
+func (s *PlayService) resolveDeviceIP(udn *string, ip *string) (string, string, error) {
 	if ip != nil && *ip != "" {
-		resolvedDeviceID := ""
-		if deviceID != nil {
-			resolvedDeviceID = *deviceID
+		resolvedUDN := ""
+		if udn != nil {
+			resolvedUDN = *udn
 		}
-		return *ip, resolvedDeviceID, nil
+		return *ip, resolvedUDN, nil
 	}
 
-	if deviceID == nil || *deviceID == "" {
-		return "", "", fmt.Errorf("device_id or ip is required")
+	if udn == nil || *udn == "" {
+		return "", "", fmt.Errorf("udn or ip is required")
 	}
 
 	if s.deviceService == nil {
 		return "", "", fmt.Errorf("device service not available")
 	}
 
-	resolvedIP, err := s.deviceService.ResolveDeviceIP(*deviceID)
+	resolvedIP, err := s.deviceService.ResolveDeviceIP(*udn)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to resolve device: %w", err)
 	}
 
-	return resolvedIP, *deviceID, nil
+	return resolvedIP, *udn, nil
 }
 
 // Play resumes playback on a device
 func (s *PlayService) Play(ctx context.Context, req PlayRequest) (*PlayResponse, error) {
-	deviceIP, deviceID, err := s.resolveDeviceIP(req.CoordinatorDeviceID, req.IP)
+	deviceIP, udn, err := s.resolveDeviceIP(req.CoordinatorUDN, req.IP)
 	if err != nil {
 		return nil, err
 	}
@@ -150,8 +150,8 @@ func (s *PlayService) Play(ctx context.Context, req PlayRequest) (*PlayResponse,
 		IP:        deviceIP,
 		StartedAt: time.Now().UTC(),
 	}
-	if deviceID != "" {
-		response.CoordinatorDeviceID = &deviceID
+	if udn != "" {
+		response.CoordinatorUDN = &udn
 	}
 
 	return response, nil
@@ -160,7 +160,7 @@ func (s *PlayService) Play(ctx context.Context, req PlayRequest) (*PlayResponse,
 // PlayFavorite plays a Sonos favorite
 func (s *PlayService) PlayFavorite(ctx context.Context, req PlayFavoriteRequest) (*PlayFavoriteResponse, error) {
 	// Resolve device IP
-	deviceIP, deviceID, err := s.resolveDeviceIP(req.DeviceID, req.IP)
+	deviceIP, udn, err := s.resolveDeviceIP(req.UDN, req.IP)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func (s *PlayService) PlayFavorite(ctx context.Context, req PlayFavoriteRequest)
 	// Build response
 	response := &PlayFavoriteResponse{
 		Object:        "play_favorite_action",
-		DeviceID:      deviceID,
+		UDN:           udn,
 		FavoriteID:    req.FavoriteID,
 		FavoriteTitle: playable.Title,
 		ContentType:   playable.ContentType,
@@ -255,7 +255,7 @@ func (s *PlayService) PlayContent(ctx context.Context, req PlayContentRequest) (
 	}
 
 	// Resolve device IP
-	deviceIP, deviceID, err := s.resolveDeviceIP(req.DeviceID, req.IP)
+	deviceIP, udn, err := s.resolveDeviceIP(req.UDN, req.IP)
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +337,7 @@ func (s *PlayService) PlayContent(ctx context.Context, req PlayContentRequest) (
 	// Build response
 	response := &PlayContentResponse{
 		Object:        "play_content_action",
-		DeviceID:      deviceID,
+		UDN:           udn,
 		QueueMode:     queueMode,
 		GroupBehavior: groupBehavior,
 		WasUngrouped:  wasUngrouped,
@@ -358,15 +358,15 @@ func (s *PlayService) PlayContent(ctx context.Context, req PlayContentRequest) (
 func (s *PlayService) ValidateContent(ctx context.Context, req ValidateContentRequest) (*ValidationResult, error) {
 	// Resolve device IP if provided
 	deviceIP := ""
-	if req.DeviceID != nil && *req.DeviceID != "" {
+	if req.UDN != nil && *req.UDN != "" {
 		if s.deviceService != nil {
-			ip, err := s.deviceService.ResolveDeviceIP(*req.DeviceID)
+			ip, err := s.deviceService.ResolveDeviceIP(*req.UDN)
 			if err != nil {
 				return &ValidationResult{
 					Valid:           false,
 					DeviceAvailable: false,
 					Error:           "failed to resolve device",
-					Remediation:     "Check that the device ID is correct",
+					Remediation:     "Check that the UDN is correct",
 				}, nil
 			}
 			deviceIP = ip
@@ -379,8 +379,8 @@ func (s *PlayService) ValidateContent(ctx context.Context, req ValidateContentRe
 		return &ValidationResult{
 			Valid:           false,
 			DeviceAvailable: false,
-			Error:           "device_id is required for validation",
-			Remediation:     "Provide a device_id to validate content",
+			Error:           "udn is required for validation",
+			Remediation:     "Provide a udn to validate content",
 		}, nil
 	}
 

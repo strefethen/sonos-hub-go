@@ -49,14 +49,15 @@ type ZoneGroup struct {
 
 // ZoneMember represents a member device in a group.
 type ZoneMember struct {
-	UUID          string
-	ZoneName      string
-	Location      string
-	IsCoordinator bool
-	IsVisible     bool
-	IsSatellite   bool
-	IsSubwoofer   bool
-	ChannelMapSet string
+	UUID             string
+	ZoneName         string
+	Location         string
+	IsCoordinator    bool
+	IsVisible        bool
+	IsSatellite      bool
+	IsSubwoofer      bool
+	ChannelMapSet    string
+	HdmiCecAvailable bool // true if device has HDMI capability (Arc, Beam, Ray)
 }
 
 // FavoriteItem represents a Sonos favorite (subset).

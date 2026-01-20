@@ -218,6 +218,46 @@ func (c *Client) Browse(ctx context.Context, ip, objectID, browseFlag, filter st
 	return parseBrowseResult(payload), nil
 }
 
+// SearchMusicLibrary searches the music library for content matching the query.
+// Uses UPnP ContentDirectory Browse with A: prefix ObjectIDs for search patterns.
+//
+// Example:
+//
+//	result, err := client.SearchMusicLibrary(ctx, ip, MusicLibraryAlbum, "beatles", 0, 25)
+//	result, err := client.SearchMusicLibrary(ctx, ip, MusicLibraryArtist, "", 0, 100) // browse all
+func (c *Client) SearchMusicLibrary(ctx context.Context, ip string, contentType MusicLibraryContentType, query string, startingIndex, requestedCount int) (MusicLibraryBrowseResult, error) {
+	// Build the ObjectID for searching
+	// Format: A:PREFIX or A:PREFIX:searchterm
+	prefix, ok := MusicLibraryPrefixes[contentType]
+	if !ok {
+		return MusicLibraryBrowseResult{}, nil
+	}
+
+	objectID := prefix
+	if query != "" {
+		objectID = prefix + ":" + query
+	}
+
+	// Cap at 1000 (Sonos max)
+	if requestedCount > 1000 {
+		requestedCount = 1000
+	}
+
+	payload, err := c.ExecuteAction(ctx, ip, ServiceContentDirectory, "Browse", map[string]string{
+		"ObjectID":       objectID,
+		"BrowseFlag":     "BrowseDirectChildren",
+		"Filter":         "*",
+		"StartingIndex":  strconv.Itoa(startingIndex),
+		"RequestedCount": strconv.Itoa(requestedCount),
+		"SortCriteria":   "",
+	})
+	if err != nil {
+		return MusicLibraryBrowseResult{}, err
+	}
+
+	return parseMusicLibraryResult(payload, contentType), nil
+}
+
 // ZoneAttributes minimal response.
 type ZoneAttributes struct {
 	CurrentZoneName string
@@ -236,6 +276,48 @@ type BrowseResult struct {
 	Items          []FavoriteItem
 }
 
+// =============================================================================
+// Music Library Search Types
+// =============================================================================
+
+// MusicLibraryContentType represents types of content in the music library.
+type MusicLibraryContentType string
+
+const (
+	MusicLibraryArtist MusicLibraryContentType = "artist"
+	MusicLibraryAlbum  MusicLibraryContentType = "album"
+	MusicLibraryTrack  MusicLibraryContentType = "track"
+)
+
+// MusicLibraryPrefixes maps content types to their A: prefix ObjectIDs.
+var MusicLibraryPrefixes = map[MusicLibraryContentType]string{
+	MusicLibraryArtist: "A:ALBUMARTIST",
+	MusicLibraryAlbum:  "A:ALBUM",
+	MusicLibraryTrack:  "A:TRACKS",
+}
+
+// MusicLibraryItem represents an item from the music library.
+type MusicLibraryItem struct {
+	ID           string                  // Unique ID, e.g., "A:ALBUMARTIST/Beatles"
+	ParentID     string                  // Parent container ID
+	Title        string                  // Display name
+	ContentType  MusicLibraryContentType // Type of content
+	ArtistName   string                  // Artist/creator name
+	AlbumName    string                  // Album name (for tracks)
+	AlbumArtURI  string                  // Album artwork URL
+	Resource     string                  // Playback URI
+	ProtocolInfo string                  // MIME/protocol info
+	Duration     string                  // Duration in HH:MM:SS format (for tracks)
+	UpnpClass    string                  // UPnP class
+}
+
+// MusicLibraryBrowseResult represents the result of a music library search.
+type MusicLibraryBrowseResult struct {
+	Items          []MusicLibraryItem
+	TotalMatches   int
+	NumberReturned int
+}
+
 func parseBrowseResult(payload []byte) BrowseResult {
 	result := BrowseResult{}
 	result.Result = parseTextValue(payload, "Result")
@@ -250,6 +332,121 @@ func parseBrowseResult(payload []byte) BrowseResult {
 	items := parseDidlFavorites([]byte(result.Result))
 	result.Items = items
 	return result
+}
+
+// parseMusicLibraryResult parses music library Browse result into typed items.
+func parseMusicLibraryResult(payload []byte, contentType MusicLibraryContentType) MusicLibraryBrowseResult {
+	result := MusicLibraryBrowseResult{}
+	resultXML := parseTextValue(payload, "Result")
+	result.NumberReturned, _ = strconv.Atoi(parseTextValue(payload, "NumberReturned"))
+	result.TotalMatches, _ = strconv.Atoi(parseTextValue(payload, "TotalMatches"))
+
+	if resultXML == "" {
+		return result
+	}
+
+	result.Items = parseMusicLibraryDidl([]byte(resultXML), contentType)
+	return result
+}
+
+// parseMusicLibraryDidl parses DIDL-Lite XML for music library items.
+// Handles both 'container' (albums, artists, genres, playlists) and 'item' (tracks).
+func parseMusicLibraryDidl(payload []byte, contentType MusicLibraryContentType) []MusicLibraryItem {
+	decoder := xml.NewDecoder(bytes.NewReader(payload))
+	var items []MusicLibraryItem
+	var current *MusicLibraryItem
+
+	for {
+		tok, err := decoder.Token()
+		if err != nil {
+			break
+		}
+		switch se := tok.(type) {
+		case xml.StartElement:
+			switch se.Name.Local {
+			case "container":
+				// Albums, artists, genres, playlists are containers
+				item := MusicLibraryItem{ContentType: contentType}
+				for _, attr := range se.Attr {
+					switch attr.Name.Local {
+					case "id":
+						item.ID = attr.Value
+					case "parentID":
+						item.ParentID = attr.Value
+					}
+				}
+				items = append(items, item)
+				current = &items[len(items)-1]
+			case "item":
+				// Tracks are items
+				item := MusicLibraryItem{ContentType: MusicLibraryTrack}
+				for _, attr := range se.Attr {
+					switch attr.Name.Local {
+					case "id":
+						item.ID = attr.Value
+					case "parentID":
+						item.ParentID = attr.Value
+					}
+				}
+				items = append(items, item)
+				current = &items[len(items)-1]
+			case "title":
+				if current != nil {
+					var value string
+					if err := decoder.DecodeElement(&value, &se); err == nil {
+						current.Title = strings.TrimSpace(value)
+					}
+				}
+			case "creator":
+				if current != nil {
+					var value string
+					if err := decoder.DecodeElement(&value, &se); err == nil {
+						current.ArtistName = strings.TrimSpace(value)
+					}
+				}
+			case "album":
+				if current != nil {
+					var value string
+					if err := decoder.DecodeElement(&value, &se); err == nil {
+						current.AlbumName = strings.TrimSpace(value)
+					}
+				}
+			case "albumArtURI":
+				if current != nil {
+					var value string
+					if err := decoder.DecodeElement(&value, &se); err == nil {
+						current.AlbumArtURI = strings.TrimSpace(value)
+					}
+				}
+			case "class":
+				if current != nil {
+					var value string
+					if err := decoder.DecodeElement(&value, &se); err == nil {
+						current.UpnpClass = strings.TrimSpace(value)
+					}
+				}
+			case "res":
+				if current != nil {
+					// Extract duration from res attributes
+					for _, attr := range se.Attr {
+						switch attr.Name.Local {
+						case "protocolInfo":
+							current.ProtocolInfo = attr.Value
+						case "duration":
+							current.Duration = attr.Value
+						}
+					}
+					// Get resource URI from element text
+					var value string
+					if err := decoder.DecodeElement(&value, &se); err == nil {
+						current.Resource = strings.TrimSpace(value)
+					}
+				}
+			}
+		}
+	}
+
+	return items
 }
 
 // parseZoneGroupState parses GetZoneGroupState response XML and returns minimal structure.
@@ -305,6 +502,8 @@ func parseZoneGroupState(payload []byte) ZoneGroupState {
 						member.ChannelMapSet = attr.Value
 					case "Invisible":
 						member.IsVisible = !(attr.Value == "true" || attr.Value == "1")
+					case "HdmiCecAvailable":
+						member.HdmiCecAvailable = attr.Value == "1"
 					}
 				}
 				if member.UUID != "" && member.UUID == coordinator {

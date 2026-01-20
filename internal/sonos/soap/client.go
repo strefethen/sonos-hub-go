@@ -20,13 +20,17 @@ type Client struct {
 }
 
 // NewClient creates a SOAP client with the given timeout.
+// Uses connection pooling for better performance when making multiple requests.
 func NewClient(timeout time.Duration) *Client {
 	return &Client{
 		timeout: timeout,
 		httpClient: &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{
-				DialContext: (&net.Dialer{Timeout: timeout}).DialContext,
+				DialContext:         (&net.Dialer{Timeout: timeout}).DialContext,
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
 			},
 		},
 	}
