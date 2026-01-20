@@ -14,6 +14,7 @@ import (
 
 	"github.com/strefethen/sonos-hub-go/internal/api"
 	"github.com/strefethen/sonos-hub-go/internal/apperrors"
+	"github.com/strefethen/sonos-hub-go/internal/sonos/soap"
 )
 
 // RegisterRoutes wires Sonos routes to the router.
@@ -21,13 +22,13 @@ func RegisterRoutes(router chi.Router, service *Service) {
 	router.Route("/v1/sonos/playback", func(playback chi.Router) {
 		playback.Method(http.MethodPost, "/stop", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
 			var body struct {
-				DeviceID string `json:"device_id"`
+				UDN string `json:"udn"`
 			}
-			if err := decodeJSON(r, &body); err != nil || body.DeviceID == "" {
-				return apperrors.NewValidationError("device_id is required", nil)
+			if err := decodeJSON(r, &body); err != nil || body.UDN == "" {
+				return apperrors.NewValidationError("udn is required", nil)
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(body.DeviceID)
+			deviceIP, err := service.ResolveDeviceIP(body.UDN)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -37,7 +38,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 			return api.WriteAction(w, http.StatusOK, map[string]any{
 				"object":     "playback_action",
-				"device_id":  body.DeviceID,
+				"udn":        body.UDN,
 				"action":     "stop",
 				"stopped_at": api.RFC3339Millis(time.Now()),
 			})
@@ -45,13 +46,13 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 		playback.Method(http.MethodPost, "/pause", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
 			var body struct {
-				DeviceID string `json:"device_id"`
+				UDN string `json:"udn"`
 			}
-			if err := decodeJSON(r, &body); err != nil || body.DeviceID == "" {
-				return apperrors.NewValidationError("device_id is required", nil)
+			if err := decodeJSON(r, &body); err != nil || body.UDN == "" {
+				return apperrors.NewValidationError("udn is required", nil)
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(body.DeviceID)
+			deviceIP, err := service.ResolveDeviceIP(body.UDN)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -61,7 +62,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 			return api.WriteAction(w, http.StatusOK, map[string]any{
 				"object":    "playback_action",
-				"device_id": body.DeviceID,
+				"udn":       body.UDN,
 				"action":    "pause",
 				"paused_at": api.RFC3339Millis(time.Now()),
 			})
@@ -69,13 +70,13 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 		playback.Method(http.MethodPost, "/play", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
 			var body struct {
-				DeviceID string `json:"device_id"`
+				UDN string `json:"udn"`
 			}
-			if err := decodeJSON(r, &body); err != nil || body.DeviceID == "" {
-				return apperrors.NewValidationError("device_id is required", nil)
+			if err := decodeJSON(r, &body); err != nil || body.UDN == "" {
+				return apperrors.NewValidationError("udn is required", nil)
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(body.DeviceID)
+			deviceIP, err := service.ResolveDeviceIP(body.UDN)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -85,7 +86,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 			return api.WriteAction(w, http.StatusOK, map[string]any{
 				"object":     "playback_action",
-				"device_id":  body.DeviceID,
+				"udn":        body.UDN,
 				"action":     "play",
 				"resumed_at": api.RFC3339Millis(time.Now()),
 			})
@@ -93,13 +94,13 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 		playback.Method(http.MethodPost, "/next", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
 			var body struct {
-				DeviceID string `json:"device_id"`
+				UDN string `json:"udn"`
 			}
-			if err := decodeJSON(r, &body); err != nil || body.DeviceID == "" {
-				return apperrors.NewValidationError("device_id is required", nil)
+			if err := decodeJSON(r, &body); err != nil || body.UDN == "" {
+				return apperrors.NewValidationError("udn is required", nil)
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(body.DeviceID)
+			deviceIP, err := service.ResolveDeviceIP(body.UDN)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -109,7 +110,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 			return api.WriteAction(w, http.StatusOK, map[string]any{
 				"object":     "playback_action",
-				"device_id":  body.DeviceID,
+				"udn":        body.UDN,
 				"action":     "next",
 				"skipped_at": api.RFC3339Millis(time.Now()),
 			})
@@ -117,13 +118,13 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 		playback.Method(http.MethodPost, "/previous", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
 			var body struct {
-				DeviceID string `json:"device_id"`
+				UDN string `json:"udn"`
 			}
-			if err := decodeJSON(r, &body); err != nil || body.DeviceID == "" {
-				return apperrors.NewValidationError("device_id is required", nil)
+			if err := decodeJSON(r, &body); err != nil || body.UDN == "" {
+				return apperrors.NewValidationError("udn is required", nil)
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(body.DeviceID)
+			deviceIP, err := service.ResolveDeviceIP(body.UDN)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -136,19 +137,19 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 			return api.WriteAction(w, http.StatusOK, map[string]any{
 				"object":     "playback_action",
-				"device_id":  body.DeviceID,
+				"udn":        body.UDN,
 				"action":     "previous",
 				"skipped_at": api.RFC3339Millis(time.Now()),
 			})
 		}))
 
 		playback.Method(http.MethodGet, "/state", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
-			deviceID := r.URL.Query().Get("device_id")
-			if deviceID == "" {
-				return apperrors.NewValidationError("device_id query parameter is required", nil)
+			udn := r.URL.Query().Get("udn")
+			if udn == "" {
+				return apperrors.NewValidationError("udn query parameter is required", nil)
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(deviceID)
+			deviceIP, err := service.ResolveDeviceIP(udn)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -158,194 +159,91 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			}
 
 			return api.WriteResource(w, http.StatusOK, map[string]any{
-				"object":    "playback_state",
-				"device_id": deviceID,
-				"state":     state.CurrentTransportState,
-				"status":    state.CurrentTransportStatus,
-				"speed":     state.CurrentSpeed,
+				"object": "playback_state",
+				"udn":    udn,
+				"state":  state.CurrentTransportState,
+				"status": state.CurrentTransportStatus,
+				"speed":  state.CurrentSpeed,
 			})
 		}))
 
 		playback.Method(http.MethodGet, "/now-playing", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
-			deviceID := r.URL.Query().Get("device_id")
-			if deviceID == "" {
-				return apperrors.NewValidationError("device_id query parameter is required", nil)
+			udn := r.URL.Query().Get("udn")
+			if udn == "" {
+				return apperrors.NewValidationError("udn query parameter is required", nil)
 			}
 
-			entryIP, err := service.ResolveDeviceIP(deviceID)
+			// Check for debug flag to include data sources
+			includeDebug := r.URL.Query().Get("debug") == "true"
+
+			entryIP, err := service.ResolveDeviceIP(udn)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
 
-			zoneState, err := service.GetZoneGroupState(entryIP)
+			// Use cached zone group state (30s TTL by default)
+			zoneState, err := service.GetZoneGroupStateCached(entryIP)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to fetch zone group state")
 			}
 
-			uuidToIP := map[string]string{}
-			ipRegex := regexp.MustCompile(`http://([^:]+):`)
-			for _, group := range zoneState.Groups {
-				for _, member := range group.Members {
-					match := ipRegex.FindStringSubmatch(member.Location)
-					if len(match) > 1 {
-						uuidToIP[member.UUID] = match[1]
+			// Build UUID to IP mapping
+			uuidToIP := BuildUUIDToIPMap(zoneState)
+
+			// Extract coordinator info for parallel fetching
+			coordinators := ExtractCoordinators(zoneState, uuidToIP)
+
+			// Fetch all groups using hybrid approach (cache-first with SOAP fallback)
+			results, dataSources := FetchAllGroupsPlaybackHybrid(service, coordinators)
+
+			// Build response from hybrid results
+			groups := make([]map[string]any, 0, len(results))
+			for _, result := range results {
+				// Convert HybridGroupResult to GroupPlaybackResult for buildNowPlayingGroup
+				groupResult := GroupPlaybackResult{
+					Coordinator: result.Coordinator,
+					Playback:    result.Playback.GroupPlaybackInfo,
+				}
+				groupData := buildNowPlayingGroup(groupResult)
+				if groupData != nil {
+					// Add data source to group if debugging
+					if includeDebug {
+						groupData["_data_source"] = string(result.Playback.Source)
+						if result.Playback.Source == DataSourceCache {
+							groupData["_cache_age_ms"] = result.Playback.CacheAge.Milliseconds()
+						}
 					}
+					groups = append(groups, groupData)
 				}
 			}
 
-			groups := make([]map[string]any, 0)
-			for _, group := range zoneState.Groups {
-				visibleMembers := make([]soapMember, 0)
-				for _, member := range group.Members {
-					if member.IsVisible {
-						visibleMembers = append(visibleMembers, soapMember{
-							UUID:          member.UUID,
-							ZoneName:      member.ZoneName,
-							IsCoordinator: member.IsCoordinator,
-						})
-					}
-				}
-				if len(visibleMembers) == 0 {
-					continue
-				}
-
-				var coordinator *soapMember
-				for _, member := range visibleMembers {
-					if member.IsCoordinator {
-						coordinator = &member
-						break
-					}
-				}
-				if coordinator == nil {
-					continue
-				}
-
-				coordinatorIP := uuidToIP[coordinator.UUID]
-				if coordinatorIP == "" {
-					continue
-				}
-
-				transportInfo, err := service.GetTransportInfo(coordinatorIP)
-				if err != nil {
-					continue
-				}
-				positionInfo, err := service.GetPositionInfo(coordinatorIP)
-				if err != nil {
-					continue
-				}
-				mediaInfo, err := service.GetMediaInfo(coordinatorIP)
-				if err != nil {
-					continue
-				}
-				volumeInfo, err := service.GetVolume(coordinatorIP)
-				if err != nil {
-					continue
-				}
-				muteInfo, err := service.GetMute(coordinatorIP)
-				if err != nil {
-					continue
-				}
-
-				isTV := strings.Contains(mediaInfo.CurrentURI, "x-sonos-htastream")
-
-				var track any = nil
-				metadata := ParseDidlMetadata(positionInfo.TrackMetaData, positionInfo.TrackURI)
-				if isTV {
-					track = map[string]any{
-						"title":            "TV",
-						"artist":           nil,
-						"album":            nil,
-						"album_art_uri":    nil,
-						"duration_seconds": nil,
-						"position_seconds": nil,
-						"source":           "tv",
-						"service_name":     "TV Audio",
-						"service_logo_url": nil,
-					}
-				} else if metadata != nil && transportInfo.CurrentTransportState != "STOPPED" {
-					albumArt := metadata.AlbumArtURI
-					if albumArt != "" {
-						albumArt = normalizeAlbumArtURI(albumArt, coordinatorIP)
-					}
-
-					serviceLogo := ""
-					if metadata.ServiceName != "" {
-						serviceLogo = GetServiceLogoFromName(metadata.ServiceName)
-					}
-
-					var logo any = nil
-					if serviceLogo != "" {
-						logo = serviceLogo
-					}
-
-					var art any = nil
-					if albumArt != "" {
-						art = albumArt
-					}
-
-					track = map[string]any{
-						"title":            metadata.Title,
-						"artist":           emptyToNil(metadata.Artist),
-						"album":            emptyToNil(metadata.Album),
-						"album_art_uri":    art,
-						"duration_seconds": ParseDuration(positionInfo.TrackDuration),
-						"position_seconds": ParseDuration(positionInfo.RelTime),
-						"source":           metadata.Source,
-						"service_name":     emptyToNil(metadata.ServiceName),
-						"service_logo_url": logo,
-					}
-				}
-
-				container := any(nil)
-				containerMeta := ParseContainerMetadata(mediaInfo.CurrentURIMetaData)
-				if containerMeta != nil && containerMeta.Name != "" {
-					container = map[string]any{
-						"name": containerMeta.Name,
-						"type": containerMeta.Type,
-					}
-				}
-
-				displayState := transportInfo.CurrentTransportState
-
-				memberRooms := make([]string, 0)
-				for _, member := range visibleMembers {
-					if member.IsCoordinator {
-						continue
-					}
-					memberRooms = append(memberRooms, member.ZoneName)
-				}
-
-				groups = append(groups, map[string]any{
-					"coordinator_id": coordinator.UUID,
-					"room_name":      coordinator.ZoneName,
-					"member_rooms":   memberRooms,
-					"playback": map[string]any{
-						"state":     displayState,
-						"volume":    volumeInfo.CurrentVolume,
-						"muted":     muteInfo.CurrentMute,
-						"track":     track,
-						"container": container,
-						"isTV":      isTV,
-					},
-				})
-			}
-
-			return api.WriteResource(w, http.StatusOK, map[string]any{
+			response := map[string]any{
 				"object":       "now_playing",
 				"groups":       groups,
 				"total_groups": len(groups),
-			})
+			}
+
+			// Include data source stats if debugging
+			if includeDebug {
+				stats := GetDataSourceStats(dataSources)
+				response["_data_sources"] = map[string]any{
+					"cache_hits":   stats.CacheHits,
+					"soap_fetches": stats.SOAPFetches,
+				}
+			}
+
+			return api.WriteResource(w, http.StatusOK, response)
 		}))
 	})
 
 	router.Route("/v1/sonos/groups", func(groups chi.Router) {
 		groups.Method(http.MethodGet, "/", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
-			deviceID := r.URL.Query().Get("device_id")
-			if deviceID == "" {
-				return apperrors.NewValidationError("device_id query parameter is required", nil)
+			udn := r.URL.Query().Get("udn")
+			if udn == "" {
+				return apperrors.NewValidationError("udn query parameter is required", nil)
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(deviceID)
+			deviceIP, err := service.ResolveDeviceIP(udn)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -385,42 +283,42 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 		groups.Method(http.MethodPost, "/", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
 			var body struct {
-				CoordinatorDeviceID string   `json:"coordinator_device_id"`
-				MemberDeviceIDs     []string `json:"member_device_ids"`
+				CoordinatorUDN string   `json:"coordinator_udn"`
+				MemberUDNs     []string `json:"member_udns"`
 			}
 			if err := decodeJSON(r, &body); err != nil {
-				return apperrors.NewValidationError("coordinator_device_id is required", nil)
+				return apperrors.NewValidationError("coordinator_udn is required", nil)
 			}
-			if body.CoordinatorDeviceID == "" {
-				return apperrors.NewValidationError("coordinator_device_id is required", nil)
+			if body.CoordinatorUDN == "" {
+				return apperrors.NewValidationError("coordinator_udn is required", nil)
 			}
 
-			memberIDs := make([]string, 0, len(body.MemberDeviceIDs))
-			for _, id := range body.MemberDeviceIDs {
-				if id != "" && id != body.CoordinatorDeviceID {
-					memberIDs = append(memberIDs, id)
+			memberUDNs := make([]string, 0, len(body.MemberUDNs))
+			for _, udn := range body.MemberUDNs {
+				if udn != "" && udn != body.CoordinatorUDN {
+					memberUDNs = append(memberUDNs, udn)
 				}
 			}
 
-			if len(memberIDs) == 0 {
+			if len(memberUDNs) == 0 {
 				return api.WriteAction(w, http.StatusOK, map[string]any{
-					"object":                "group_create",
-					"coordinator_device_id": body.CoordinatorDeviceID,
-					"coordinator_uuid":      nil,
-					"coordinator_name":      nil,
-					"member_results":        []map[string]any{},
-					"all_succeeded":         true,
+					"object":           "group_create",
+					"coordinator_udn":  body.CoordinatorUDN,
+					"coordinator_uuid": nil,
+					"coordinator_name": nil,
+					"member_results":   []map[string]any{},
+					"all_succeeded":    true,
 				})
 			}
 
-			coordinatorIP, err := service.ResolveDeviceIP(body.CoordinatorDeviceID)
+			coordinatorIP, err := service.ResolveDeviceIP(body.CoordinatorUDN)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve coordinator device")
 			}
 
-			memberIPs := make([]string, 0, len(memberIDs))
-			for _, id := range memberIDs {
-				ip, err := service.ResolveDeviceIP(id)
+			memberIPs := make([]string, 0, len(memberUDNs))
+			for _, memberUDN := range memberUDNs {
+				ip, err := service.ResolveDeviceIP(memberUDN)
 				if err != nil {
 					memberIPs = append(memberIPs, "")
 					continue
@@ -455,14 +353,14 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				return apperrors.NewValidationError("Could not determine coordinator UUID", nil)
 			}
 
-			memberResults := make([]map[string]any, 0, len(memberIDs))
+			memberResults := make([]map[string]any, 0, len(memberUDNs))
 			for idx, memberIP := range memberIPs {
-				memberID := memberIDs[idx]
+				memberUDN := memberUDNs[idx]
 				if memberIP == "" {
 					memberResults = append(memberResults, map[string]any{
-						"device_id": memberID,
-						"success":   false,
-						"error":     "Unable to resolve device",
+						"udn":     memberUDN,
+						"success": false,
+						"error":   "Unable to resolve device",
 					})
 					continue
 				}
@@ -470,15 +368,15 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				err := service.SetAVTransportURI(memberIP, "x-rincon:"+coordinatorUUID)
 				if err != nil {
 					memberResults = append(memberResults, map[string]any{
-						"device_id": memberID,
-						"success":   false,
-						"error":     err.Error(),
+						"udn":     memberUDN,
+						"success": false,
+						"error":   err.Error(),
 					})
 					continue
 				}
 				memberResults = append(memberResults, map[string]any{
-					"device_id": memberID,
-					"success":   true,
+					"udn":     memberUDN,
+					"success": true,
 				})
 			}
 
@@ -491,30 +389,30 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			}
 
 			return api.WriteAction(w, http.StatusOK, map[string]any{
-				"object":                "group_create",
-				"coordinator_device_id": body.CoordinatorDeviceID,
-				"coordinator_uuid":      coordinatorUUID,
-				"coordinator_name":      zoneAttrs.CurrentZoneName,
-				"member_results":        memberResults,
-				"all_succeeded":         allSucceeded,
+				"object":           "group_create",
+				"coordinator_udn":  body.CoordinatorUDN,
+				"coordinator_uuid": coordinatorUUID,
+				"coordinator_name": zoneAttrs.CurrentZoneName,
+				"member_results":   memberResults,
+				"all_succeeded":    allSucceeded,
 			})
 		}))
 
 		groups.Method(http.MethodPost, "/ungroup", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
 			var body struct {
-				DeviceIDs []string `json:"device_ids"`
-				IPs       []string `json:"ips"`
+				UDNs []string `json:"udns"`
+				IPs  []string `json:"ips"`
 			}
 			if err := decodeJSON(r, &body); err != nil {
-				return apperrors.NewValidationError("device_ids or ips array is required and must not be empty", nil)
+				return apperrors.NewValidationError("udns or ips array is required and must not be empty", nil)
 			}
-			if len(body.DeviceIDs) == 0 && len(body.IPs) == 0 {
-				return apperrors.NewValidationError("device_ids or ips array is required and must not be empty", nil)
+			if len(body.UDNs) == 0 && len(body.IPs) == 0 {
+				return apperrors.NewValidationError("udns or ips array is required and must not be empty", nil)
 			}
 
-			resolvedIPs := make([]string, 0, len(body.DeviceIDs))
-			for _, id := range body.DeviceIDs {
-				ip, err := service.ResolveDeviceIP(id)
+			resolvedIPs := make([]string, 0, len(body.UDNs))
+			for _, udn := range body.UDNs {
+				ip, err := service.ResolveDeviceIP(udn)
 				if err != nil {
 					resolvedIPs = append(resolvedIPs, "")
 					continue
@@ -524,12 +422,12 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 			ungroupResults := make([]map[string]any, 0)
 			for idx, ip := range resolvedIPs {
-				deviceID := body.DeviceIDs[idx]
+				udn := body.UDNs[idx]
 				if ip == "" {
 					ungroupResults = append(ungroupResults, map[string]any{
-						"device_id": deviceID,
-						"success":   false,
-						"error":     "Unable to resolve device",
+						"udn":     udn,
+						"success": false,
+						"error":   "Unable to resolve device",
 					})
 					continue
 				}
@@ -537,15 +435,15 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				err := service.BecomeCoordinatorOfStandaloneGroup(ip)
 				if err != nil {
 					ungroupResults = append(ungroupResults, map[string]any{
-						"device_id": deviceID,
-						"success":   false,
-						"error":     err.Error(),
+						"udn":     udn,
+						"success": false,
+						"error":   err.Error(),
 					})
 					continue
 				}
 				ungroupResults = append(ungroupResults, map[string]any{
-					"device_id": deviceID,
-					"success":   true,
+					"udn":     udn,
+					"success": true,
 				})
 			}
 
@@ -556,15 +454,15 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				err := service.BecomeCoordinatorOfStandaloneGroup(ip)
 				if err != nil {
 					ungroupResults = append(ungroupResults, map[string]any{
-						"device_id": ip,
-						"success":   false,
-						"error":     err.Error(),
+						"udn":     ip,
+						"success": false,
+						"error":   err.Error(),
 					})
 					continue
 				}
 				ungroupResults = append(ungroupResults, map[string]any{
-					"device_id": ip,
-					"success":   true,
+					"udn":     ip,
+					"success": true,
 				})
 			}
 
@@ -587,25 +485,25 @@ func RegisterRoutes(router chi.Router, service *Service) {
 	router.Route("/v1/sonos/volume", func(volume chi.Router) {
 		volume.Method(http.MethodPost, "/", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
 			var body struct {
-				DeviceID string   `json:"device_id"`
-				Volume   *float64 `json:"volume"`
-				Ramp     *struct {
+				UDN    string   `json:"udn"`
+				Volume *float64 `json:"volume"`
+				Ramp   *struct {
 					Enabled    bool   `json:"enabled"`
 					DurationMs *int   `json:"duration_ms"`
 					Curve      string `json:"curve"`
 				} `json:"ramp"`
 			}
 			if err := decodeJSON(r, &body); err != nil {
-				return apperrors.NewValidationError("device_id is required", nil)
+				return apperrors.NewValidationError("udn is required", nil)
 			}
-			if body.DeviceID == "" {
-				return apperrors.NewValidationError("device_id is required", nil)
+			if body.UDN == "" {
+				return apperrors.NewValidationError("udn is required", nil)
 			}
 			if body.Volume == nil || *body.Volume < 0 || *body.Volume > 100 {
 				return apperrors.NewValidationError("volume must be a number between 0 and 100", nil)
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(body.DeviceID)
+			deviceIP, err := service.ResolveDeviceIP(body.UDN)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -638,7 +536,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 			return api.WriteAction(w, http.StatusOK, map[string]any{
 				"object":          "volume_action",
-				"device_id":       body.DeviceID,
+				"udn":             body.UDN,
 				"volume":          target,
 				"previous_volume": currentVolume.CurrentVolume,
 				"ramped":          ramped,
@@ -650,20 +548,20 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 		volume.Method(http.MethodPost, "/set", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
 			var body struct {
-				DeviceID string   `json:"device_id"`
-				Level    *float64 `json:"level"`
+				UDN   string   `json:"udn"`
+				Level *float64 `json:"level"`
 			}
 			if err := decodeJSON(r, &body); err != nil {
-				return apperrors.NewValidationError("device_id is required", nil)
+				return apperrors.NewValidationError("udn is required", nil)
 			}
-			if body.DeviceID == "" {
-				return apperrors.NewValidationError("device_id is required", nil)
+			if body.UDN == "" {
+				return apperrors.NewValidationError("udn is required", nil)
 			}
 			if body.Level == nil || *body.Level < 0 || *body.Level > 100 {
 				return apperrors.NewValidationError("level must be a number between 0 and 100", nil)
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(body.DeviceID)
+			deviceIP, err := service.ResolveDeviceIP(body.UDN)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -684,7 +582,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 			return api.WriteAction(w, http.StatusOK, map[string]any{
 				"object":          "volume_action",
-				"device_id":       body.DeviceID,
+				"udn":             body.UDN,
 				"level":           target,
 				"previous_level":  currentVolume.CurrentVolume,
 				"all_succeeded":   failed == 0,
@@ -695,16 +593,16 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 		volume.Method(http.MethodPost, "/ramp", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
 			var body struct {
-				DeviceID    string   `json:"device_id"`
+				UDN         string   `json:"udn"`
 				TargetLevel *float64 `json:"target_level"`
 				DurationMs  *int     `json:"duration_ms"`
 				Curve       string   `json:"curve"`
 			}
 			if err := decodeJSON(r, &body); err != nil {
-				return apperrors.NewValidationError("device_id is required", nil)
+				return apperrors.NewValidationError("udn is required", nil)
 			}
-			if body.DeviceID == "" {
-				return apperrors.NewValidationError("device_id is required", nil)
+			if body.UDN == "" {
+				return apperrors.NewValidationError("udn is required", nil)
 			}
 			if body.TargetLevel == nil || *body.TargetLevel < 0 || *body.TargetLevel > 100 {
 				return apperrors.NewValidationError("target_level must be a number between 0 and 100", nil)
@@ -723,7 +621,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 				curve = "linear"
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(body.DeviceID)
+			deviceIP, err := service.ResolveDeviceIP(body.UDN)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -744,7 +642,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 			return api.WriteAction(w, http.StatusOK, map[string]any{
 				"object":          "volume_ramp",
-				"device_id":       body.DeviceID,
+				"udn":             body.UDN,
 				"start_level":     currentVolume.CurrentVolume,
 				"target_level":    target,
 				"duration_ms":     durationMs,
@@ -757,12 +655,12 @@ func RegisterRoutes(router chi.Router, service *Service) {
 	})
 
 	router.Method(http.MethodGet, "/v1/sonos/alarms", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
-		deviceID := r.URL.Query().Get("device_id")
-		if deviceID == "" {
-			return apperrors.NewValidationError("device_id query parameter is required", nil)
+		udn := r.URL.Query().Get("udn")
+		if udn == "" {
+			return apperrors.NewValidationError("udn query parameter is required", nil)
 		}
 
-		deviceIP, err := service.ResolveDeviceIP(deviceID)
+		deviceIP, err := service.ResolveDeviceIP(udn)
 		if err != nil {
 			return apperrors.NewInternalError("Failed to resolve device")
 		}
@@ -874,12 +772,12 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 	router.Route("/v1/sonos/players", func(players chi.Router) {
 		players.Method(http.MethodGet, "/", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
-			deviceID := r.URL.Query().Get("device_id")
-			if deviceID == "" {
-				return apperrors.NewValidationError("device_id query parameter is required", nil)
+			udn := r.URL.Query().Get("udn")
+			if udn == "" {
+				return apperrors.NewValidationError("udn query parameter is required", nil)
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(deviceID)
+			deviceIP, err := service.ResolveDeviceIP(udn)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -917,13 +815,13 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			})
 		}))
 
-		players.Method(http.MethodGet, "/{device_id}/state", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
-			deviceID := chi.URLParam(r, "device_id")
-			if deviceID == "" {
-				return apperrors.NewValidationError("device_id is required", nil)
+		players.Method(http.MethodGet, "/{udn}/state", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
+			udn := chi.URLParam(r, "udn")
+			if udn == "" {
+				return apperrors.NewValidationError("udn is required", nil)
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(deviceID)
+			deviceIP, err := service.ResolveDeviceIP(udn)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -957,7 +855,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 			return api.WriteResource(w, http.StatusOK, map[string]any{
 				"object":           "player_state",
-				"device_id":        deviceID,
+				"udn":              udn,
 				"transport_state":  transportInfo.CurrentTransportState,
 				"transport_status": transportInfo.CurrentTransportStatus,
 				"volume":           volumeInfo.CurrentVolume,
@@ -966,13 +864,13 @@ func RegisterRoutes(router chi.Router, service *Service) {
 			})
 		}))
 
-		players.Method(http.MethodGet, "/{device_id}/tv-status", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
-			deviceID := chi.URLParam(r, "device_id")
-			if deviceID == "" {
-				return apperrors.NewValidationError("device_id is required", nil)
+		players.Method(http.MethodGet, "/{udn}/tv-status", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
+			udn := chi.URLParam(r, "udn")
+			if udn == "" {
+				return apperrors.NewValidationError("udn is required", nil)
 			}
 
-			deviceIP, err := service.ResolveDeviceIP(deviceID)
+			deviceIP, err := service.ResolveDeviceIP(udn)
 			if err != nil {
 				return apperrors.NewInternalError("Failed to resolve device")
 			}
@@ -1017,7 +915,7 @@ func RegisterRoutes(router chi.Router, service *Service) {
 
 			return api.WriteResource(w, http.StatusOK, map[string]any{
 				"object":          "tv_status",
-				"device_id":       deviceID,
+				"udn":             udn,
 				"is_tv_active":    isTVActive,
 				"confidence":      confidence,
 				"source":          source,
@@ -1038,8 +936,8 @@ func RegisterPlayRoutes(router chi.Router, playService *PlayService) {
 			return apperrors.NewValidationError("invalid request body", nil)
 		}
 
-		if req.CoordinatorDeviceID == nil && req.IP == nil {
-			return apperrors.NewValidationError("coordinator_device_id or ip is required", nil)
+		if req.CoordinatorUDN == nil && req.IP == nil {
+			return apperrors.NewValidationError("coordinator_udn or ip is required", nil)
 		}
 
 		result, err := playService.Play(r.Context(), req)
@@ -1061,8 +959,8 @@ func RegisterPlayRoutes(router chi.Router, playService *PlayService) {
 			return apperrors.NewValidationError("favorite_id is required", nil)
 		}
 
-		if req.DeviceID == nil && req.IP == nil {
-			return apperrors.NewValidationError("device_id or ip is required", nil)
+		if req.UDN == nil && req.IP == nil {
+			return apperrors.NewValidationError("udn or ip is required", nil)
 		}
 
 		result, err := playService.PlayFavorite(r.Context(), req)
@@ -1083,8 +981,8 @@ func RegisterPlayRoutes(router chi.Router, playService *PlayService) {
 			return apperrors.NewValidationError("invalid request body", nil)
 		}
 
-		if req.DeviceID == nil && req.IP == nil {
-			return apperrors.NewValidationError("device_id or ip is required", nil)
+		if req.UDN == nil && req.IP == nil {
+			return apperrors.NewValidationError("udn or ip is required", nil)
 		}
 
 		if req.Content.Type == "" {
@@ -1107,18 +1005,21 @@ func RegisterPlayRoutes(router chi.Router, playService *PlayService) {
 
 	// GET /v1/sonos/services - Get all music service statuses
 	router.Method(http.MethodGet, "/v1/sonos/services", api.Handler(func(w http.ResponseWriter, r *http.Request) error {
-		deviceID := r.URL.Query().Get("device_id")
+		udn := r.URL.Query().Get("udn")
 		ip := r.URL.Query().Get("ip")
 
-		if deviceID == "" && ip == "" {
-			return apperrors.NewValidationError("device_id or ip query parameter is required", nil)
+		if udn == "" && ip == "" {
+			return apperrors.NewValidationError("udn or ip query parameter is required", nil)
 		}
 
+		// Resolve UDN to IP if needed - GetServices requires an IP address
 		deviceIP := ip
-		if deviceIP == "" && deviceID != "" {
-			// We need to resolve the device ID to IP
-			// For now, just pass empty and let the service handle it
-			deviceIP = deviceID // The service will resolve this
+		if deviceIP == "" && udn != "" {
+			resolvedIP, _, err := playService.resolveDeviceIP(&udn, nil)
+			if err != nil {
+				return apperrors.NewNotFoundError("Device not found", nil)
+			}
+			deviceIP = resolvedIP
 		}
 
 		services, err := playService.GetServices(r.Context(), deviceIP)
@@ -1140,16 +1041,21 @@ func RegisterPlayRoutes(router chi.Router, playService *PlayService) {
 			return apperrors.NewValidationError("service name is required", nil)
 		}
 
-		deviceID := r.URL.Query().Get("device_id")
+		udn := r.URL.Query().Get("udn")
 		ip := r.URL.Query().Get("ip")
 
-		if deviceID == "" && ip == "" {
-			return apperrors.NewValidationError("device_id or ip query parameter is required", nil)
+		if udn == "" && ip == "" {
+			return apperrors.NewValidationError("udn or ip query parameter is required", nil)
 		}
 
+		// Resolve UDN to IP if needed - GetServiceHealth requires an IP address
 		deviceIP := ip
-		if deviceIP == "" && deviceID != "" {
-			deviceIP = deviceID
+		if deviceIP == "" && udn != "" {
+			resolvedIP, _, err := playService.resolveDeviceIP(&udn, nil)
+			if err != nil {
+				return apperrors.NewNotFoundError("Device not found", nil)
+			}
+			deviceIP = resolvedIP
 		}
 
 		status, err := playService.GetServiceHealth(r.Context(), service, deviceIP)
@@ -1162,9 +1068,135 @@ func RegisterPlayRoutes(router chi.Router, playService *PlayService) {
 }
 
 type soapMember struct {
-	UUID          string
-	ZoneName      string
-	IsCoordinator bool
+	UUID             string
+	ZoneName         string
+	IsCoordinator    bool
+	HdmiCecAvailable bool
+}
+
+// buildNowPlayingGroup builds the response map for a single group from parallel fetch results.
+func buildNowPlayingGroup(result GroupPlaybackResult) map[string]any {
+	coord := result.Coordinator
+	pb := result.Playback
+
+	// If we had an error or missing transport info, skip this group
+	if pb.Error != nil || pb.TransportInfo == nil {
+		return nil
+	}
+
+	// For volume/mute, we need valid data
+	if pb.VolumeInfo == nil || pb.MuteInfo == nil {
+		return nil
+	}
+
+	transportInfo := pb.TransportInfo
+	volumeInfo := pb.VolumeInfo
+	muteInfo := pb.MuteInfo
+
+	// Position and media info may be nil if transport state was STOPPED (smart skipping)
+	var positionInfo *soap.PositionInfo
+	var mediaInfo *soap.MediaInfo
+	if pb.PositionInfo != nil {
+		positionInfo = pb.PositionInfo
+	}
+	if pb.MediaInfo != nil {
+		mediaInfo = pb.MediaInfo
+	}
+
+	// Determine if TV mode
+	isTV := false
+	currentURI := ""
+	if mediaInfo != nil {
+		currentURI = mediaInfo.CurrentURI
+		isTV = strings.Contains(currentURI, "x-sonos-htastream")
+	}
+
+	// Build track info
+	var track any = nil
+	if isTV {
+		inputType := "Optical"
+		if coord.HdmiCecAvailable {
+			inputType = "HDMI"
+		}
+		track = map[string]any{
+			"title":            "TV",
+			"artist":           nil,
+			"album":            nil,
+			"album_art_uri":    nil,
+			"duration_seconds": nil,
+			"position_seconds": nil,
+			"source":           "tv",
+			"service_name":     inputType,
+			"service_logo_url": nil,
+		}
+	} else if positionInfo != nil && transportInfo.CurrentTransportState != "STOPPED" {
+		metadata := ParseDidlMetadata(positionInfo.TrackMetaData, positionInfo.TrackURI)
+		if metadata != nil {
+			albumArt := metadata.AlbumArtURI
+			if albumArt != "" {
+				albumArt = normalizeAlbumArtURI(albumArt, coord.IP)
+			}
+
+			serviceLogo := ""
+			if metadata.ServiceName != "" {
+				serviceLogo = GetServiceLogoFromName(metadata.ServiceName)
+			}
+
+			var logo any = nil
+			if serviceLogo != "" {
+				logo = serviceLogo
+			}
+
+			var art any = nil
+			if albumArt != "" {
+				art = albumArt
+			}
+
+			track = map[string]any{
+				"title":            metadata.Title,
+				"artist":           emptyToNil(metadata.Artist),
+				"album":            emptyToNil(metadata.Album),
+				"album_art_uri":    art,
+				"duration_seconds": ParseDuration(positionInfo.TrackDuration),
+				"position_seconds": ParseDuration(positionInfo.RelTime),
+				"source":           metadata.Source,
+				"service_name":     emptyToNil(metadata.ServiceName),
+				"service_logo_url": logo,
+			}
+		}
+	}
+
+	// Build container info
+	container := any(nil)
+	if !isTV && mediaInfo != nil {
+		containerMeta := ParseContainerMetadata(mediaInfo.CurrentURIMetaData)
+		if containerMeta != nil && containerMeta.Name != "" && !strings.HasPrefix(containerMeta.Name, "RINCON_") {
+			container = map[string]any{
+				"name": containerMeta.Name,
+				"type": containerMeta.Type,
+			}
+		}
+	}
+
+	// Determine display state
+	// Keep transport state as-is (PLAYING, PAUSED_PLAYBACK, etc.)
+	// The isTV field already indicates TV mode, so clients can use both fields
+	// to determine appropriate display (e.g., show playing animation for TV when state=PLAYING)
+	displayState := transportInfo.CurrentTransportState
+
+	return map[string]any{
+		"coordinator_id": coord.UUID,
+		"room_name":      coord.ZoneName,
+		"member_rooms":   coord.MemberRooms,
+		"playback": map[string]any{
+			"state":     displayState,
+			"volume":    volumeInfo.CurrentVolume,
+			"muted":     muteInfo.CurrentMute,
+			"track":     track,
+			"container": container,
+			"isTV":      isTV,
+		},
+	}
 }
 
 type deviceVolumeResult struct {
@@ -1227,6 +1259,9 @@ var tvInputPatterns = []string{
 	"x-sonos-vli:",
 }
 
+// ipRegex extracts IP address from Sonos location URLs (e.g., "http://192.168.1.10:1400/xml/device_description.xml")
+var ipRegex = regexp.MustCompile(`http://([^:]+):`)
+
 func getGroupMemberIPs(service *Service, targetDeviceIP string) []string {
 	zoneState, err := service.GetZoneGroupState(targetDeviceIP)
 	if err != nil {
@@ -1234,7 +1269,6 @@ func getGroupMemberIPs(service *Service, targetDeviceIP string) []string {
 	}
 
 	uuidToIP := map[string]string{}
-	ipRegex := regexp.MustCompile(`http://([^:]+):`)
 	for _, group := range zoneState.Groups {
 		for _, member := range group.Members {
 			match := ipRegex.FindStringSubmatch(member.Location)
