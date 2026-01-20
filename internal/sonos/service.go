@@ -9,20 +9,72 @@ import (
 	"github.com/strefethen/sonos-hub-go/internal/sonos/soap"
 )
 
+// PlaybackState contains playback information from the state cache.
+// This mirrors events.DeviceState but avoids the import cycle.
+type PlaybackState struct {
+	DeviceIP         string
+	DeviceUDN        string
+	TransportState   string
+	TransportStatus  string
+	CurrentTrackURI  string
+	TrackDuration    string
+	RelativeTime     string
+	TrackMetaData    string
+	CurrentURIMetaData string
+	Volume           int
+	Muted            bool
+	UpdatedAt        time.Time
+	Source           string
+}
+
+// StateProvider is an interface for accessing device playback state.
+// This is implemented by events.StateCache but defined here to avoid import cycles.
+type StateProvider interface {
+	// GetPlaybackState returns the playback state for a device IP, or nil if not cached/stale.
+	GetPlaybackState(deviceIP string) *PlaybackState
+}
+
 // Service exposes Sonos operations needed by routes.
 type Service struct {
 	DeviceService   *devices.Service
 	SoapClient      *soap.Client
 	DefaultDeviceIP string
 	SoapTimeout     time.Duration
+	ZoneCache       *ZoneGroupCache
+	StateProvider   StateProvider // UPnP event state cache for hybrid data layer
 }
 
+// NewService creates a new Sonos service with the given dependencies.
 func NewService(deviceService *devices.Service, soapClient *soap.Client, defaultIP string, timeout time.Duration) *Service {
 	return &Service{
 		DeviceService:   deviceService,
 		SoapClient:      soapClient,
 		DefaultDeviceIP: defaultIP,
 		SoapTimeout:     timeout,
+		ZoneCache:       NewZoneGroupCache(30 * time.Second), // Default 30s TTL
+	}
+}
+
+// NewServiceWithConfig creates a new Sonos service with configuration options.
+func NewServiceWithConfig(deviceService *devices.Service, soapClient *soap.Client, defaultIP string, timeout time.Duration, zoneCacheTTL time.Duration) *Service {
+	return &Service{
+		DeviceService:   deviceService,
+		SoapClient:      soapClient,
+		DefaultDeviceIP: defaultIP,
+		SoapTimeout:     timeout,
+		ZoneCache:       NewZoneGroupCache(zoneCacheTTL),
+	}
+}
+
+// NewServiceWithStateProvider creates a new Sonos service with a state provider for hybrid data fetching.
+func NewServiceWithStateProvider(deviceService *devices.Service, soapClient *soap.Client, defaultIP string, timeout time.Duration, zoneCacheTTL time.Duration, stateProvider StateProvider) *Service {
+	return &Service{
+		DeviceService:   deviceService,
+		SoapClient:      soapClient,
+		DefaultDeviceIP: defaultIP,
+		SoapTimeout:     timeout,
+		ZoneCache:       NewZoneGroupCache(zoneCacheTTL),
+		StateProvider:   stateProvider,
 	}
 }
 
@@ -130,6 +182,26 @@ func (service *Service) GetZoneGroupState(deviceIP string) (soap.ZoneGroupState,
 	ctx, cancel := context.WithTimeout(context.Background(), service.SoapTimeout)
 	defer cancel()
 	return service.SoapClient.GetZoneGroupState(ctx, deviceIP)
+}
+
+// GetZoneGroupStateCached returns zone group state with caching.
+// It checks the cache first and falls back to a SOAP call if cache is stale.
+func (service *Service) GetZoneGroupStateCached(deviceIP string) (*soap.ZoneGroupState, error) {
+	if service.ZoneCache == nil {
+		state, err := service.GetZoneGroupState(deviceIP)
+		if err != nil {
+			return nil, err
+		}
+		return &state, nil
+	}
+
+	return service.ZoneCache.GetOrFetch(func() (*soap.ZoneGroupState, error) {
+		state, err := service.GetZoneGroupState(deviceIP)
+		if err != nil {
+			return nil, err
+		}
+		return &state, nil
+	})
 }
 
 func (service *Service) GetZoneAttributes(deviceIP string) (soap.ZoneAttributes, error) {
