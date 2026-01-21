@@ -117,7 +117,7 @@ func (s *Service) UpdateSet(setID string, input UpdateSetInput) (*MusicSet, erro
 	return set, nil
 }
 
-// DeleteSet deletes a music set.
+// DeleteSet soft-deletes a music set.
 func (s *Service) DeleteSet(setID string) error {
 	// Verify set exists
 	existing, err := s.setsRepo.GetByID(setID)
@@ -135,6 +135,23 @@ func (s *Service) DeleteSet(setID string) error {
 
 	s.logger.Printf("Deleted music set: %s", setID)
 	return nil
+}
+
+// GetSetIncludingDeleted retrieves a music set including soft-deleted ones (for restore).
+func (s *Service) GetSetIncludingDeleted(setID string) (*MusicSet, bool, error) {
+	return s.setsRepo.GetByIDIncludingDeleted(setID)
+}
+
+// RestoreSet restores a soft-deleted music set.
+func (s *Service) RestoreSet(setID string) (*MusicSet, error) {
+	set, err := s.setsRepo.Restore(setID)
+	if err != nil {
+		s.logger.Printf("Failed to restore music set %s: %v", setID, err)
+		return nil, err
+	}
+
+	s.logger.Printf("Restored music set: %s", setID)
+	return set, nil
 }
 
 // ==========================================================================

@@ -46,21 +46,70 @@ func (r *MusicSetRepository) Create(input CreateSetInput) (*MusicSet, error) {
 	return r.GetByID(setID)
 }
 
-// GetByID retrieves a music set by ID.
+// GetByID retrieves a music set by ID (excludes soft-deleted sets).
 func (r *MusicSetRepository) GetByID(setID string) (*MusicSet, error) {
 	row := r.reader.QueryRow(`
 		SELECT set_id, name, selection_policy, current_index, occasion_start, occasion_end, artwork_url, created_at, updated_at
 		FROM music_sets
-		WHERE set_id = ?
+		WHERE set_id = ? AND deleted_at IS NULL
 	`, setID)
 
 	return r.scanMusicSet(row)
 }
 
-// List retrieves music sets with pagination.
+// GetByIDIncludingDeleted retrieves a music set by ID including soft-deleted ones (for restore).
+func (r *MusicSetRepository) GetByIDIncludingDeleted(setID string) (*MusicSet, bool, error) {
+	var deletedAt sql.NullString
+	var set MusicSet
+	var createdAt, updatedAt string
+	var occasionStart, occasionEnd, artworkURL sql.NullString
+
+	err := r.reader.QueryRow(`
+		SELECT set_id, name, selection_policy, current_index, occasion_start, occasion_end, artwork_url, created_at, updated_at, deleted_at
+		FROM music_sets
+		WHERE set_id = ?
+	`, setID).Scan(
+		&set.SetID,
+		&set.Name,
+		&set.SelectionPolicy,
+		&set.CurrentIndex,
+		&occasionStart,
+		&occasionEnd,
+		&artworkURL,
+		&createdAt,
+		&updatedAt,
+		&deletedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+
+	if occasionStart.Valid {
+		set.OccasionStart = &occasionStart.String
+	}
+	if occasionEnd.Valid {
+		set.OccasionEnd = &occasionEnd.String
+	}
+	if artworkURL.Valid {
+		set.ArtworkURL = &artworkURL.String
+	}
+
+	result, err := r.parseMusicSet(&set, createdAt, updatedAt)
+	if err != nil {
+		return nil, false, err
+	}
+
+	isDeleted := deletedAt.Valid && deletedAt.String != ""
+	return result, isDeleted, nil
+}
+
+// List retrieves music sets with pagination (excludes soft-deleted).
 func (r *MusicSetRepository) List(limit, offset int) ([]MusicSet, int, error) {
 	var total int
-	err := r.reader.QueryRow("SELECT COUNT(*) FROM music_sets").Scan(&total)
+	err := r.reader.QueryRow("SELECT COUNT(*) FROM music_sets WHERE deleted_at IS NULL").Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -68,6 +117,7 @@ func (r *MusicSetRepository) List(limit, offset int) ([]MusicSet, int, error) {
 	rows, err := r.reader.Query(`
 		SELECT set_id, name, selection_policy, current_index, occasion_start, occasion_end, artwork_url, created_at, updated_at
 		FROM music_sets
+		WHERE deleted_at IS NULL
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
 	`, limit, offset)
@@ -150,9 +200,13 @@ func (r *MusicSetRepository) Update(setID string, input UpdateSetInput) (*MusicS
 	return r.GetByID(setID)
 }
 
-// Delete deletes a music set.
+// Delete soft-deletes a music set by setting deleted_at timestamp.
 func (r *MusicSetRepository) Delete(setID string) error {
-	result, err := r.writer.Exec("DELETE FROM music_sets WHERE set_id = ?", setID)
+	now := nowISO()
+	result, err := r.writer.Exec(
+		"UPDATE music_sets SET deleted_at = ?, updated_at = ? WHERE set_id = ? AND deleted_at IS NULL",
+		now, now, setID,
+	)
 	if err != nil {
 		return err
 	}
@@ -166,6 +220,85 @@ func (r *MusicSetRepository) Delete(setID string) error {
 	}
 
 	return nil
+}
+
+// Restore restores a soft-deleted music set by clearing deleted_at.
+func (r *MusicSetRepository) Restore(setID string) (*MusicSet, error) {
+	now := nowISO()
+	result, err := r.writer.Exec(
+		"UPDATE music_sets SET deleted_at = NULL, updated_at = ? WHERE set_id = ? AND deleted_at IS NOT NULL",
+		now, setID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if affected == 0 {
+		// Could be not found or not deleted
+		return nil, sql.ErrNoRows
+	}
+
+	return r.GetByID(setID)
+}
+
+// HardDelete permanently removes a soft-deleted music set and its items.
+// Used by cleanup job to purge old soft-deleted records.
+func (r *MusicSetRepository) HardDelete(setID string) error {
+	// Delete items first (FK constraint via CASCADE, but explicit for clarity)
+	_, err := r.writer.Exec("DELETE FROM set_items WHERE set_id = ?", setID)
+	if err != nil {
+		return err
+	}
+
+	result, err := r.writer.Exec(
+		"DELETE FROM music_sets WHERE set_id = ? AND deleted_at IS NOT NULL",
+		setID,
+	)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+// GetExpiredSoftDeletes returns music set IDs that were soft-deleted before the cutoff time.
+func (r *MusicSetRepository) GetExpiredSoftDeletes(cutoff time.Time) ([]string, error) {
+	cutoffStr := cutoff.UTC().Format(time.RFC3339)
+	rows, err := r.reader.Query(
+		"SELECT set_id FROM music_sets WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+		cutoffStr,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return ids, nil
 }
 
 // UpdateCurrentIndex updates the current index of a music set.

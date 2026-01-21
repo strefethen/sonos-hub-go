@@ -114,7 +114,7 @@ type CreateHolidayInput struct {
 // RoutinesRepository Core Methods
 // ==========================================================================
 
-// GetByID retrieves a routine by ID.
+// GetByID retrieves a routine by ID (excludes soft-deleted routines).
 func (r *RoutinesRepository) GetByID(routineID string) (*Routine, error) {
 	row := r.reader.QueryRow(`
 		SELECT routine_id, name, enabled, timezone, schedule_type, schedule_weekdays,
@@ -126,10 +126,94 @@ func (r *RoutinesRepository) GetByID(routineID string) (*Routine, error) {
 			music_content_type, music_content_json, music_no_repeat_window_minutes,
 			music_fallback_behavior, occasions_enabled, last_run_at
 		FROM routines
-		WHERE routine_id = ?
+		WHERE routine_id = ? AND deleted_at IS NULL
 	`, routineID)
 
 	return r.scanRoutineRow(row)
+}
+
+// GetByIDIncludingDeleted retrieves a routine by ID including soft-deleted ones (for restore).
+func (r *RoutinesRepository) GetByIDIncludingDeleted(routineID string) (*Routine, bool, error) {
+	var deletedAt sql.NullString
+	row := r.reader.QueryRow(`
+		SELECT routine_id, name, enabled, timezone, schedule_type, schedule_weekdays,
+			schedule_month, schedule_day, schedule_time, holiday_behavior, scene_id,
+			music_policy_type, speakers_json, skip_next, snooze_until, created_at, updated_at,
+			music_set_id, music_sonos_favorite_id, template_id, arc_tv_policy,
+			music_sonos_favorite_name, music_sonos_favorite_artwork_url,
+			music_sonos_favorite_service_logo_url, music_sonos_favorite_service_name,
+			music_content_type, music_content_json, music_no_repeat_window_minutes,
+			music_fallback_behavior, occasions_enabled, last_run_at, deleted_at
+		FROM routines
+		WHERE routine_id = ?
+	`, routineID)
+
+	var routine Routine
+	var enabled int
+	var weekdaysJSON sql.NullString
+	var scheduleMonth, scheduleDay sql.NullInt64
+	var musicPolicyType sql.NullString
+	var speakersJSON sql.NullString
+	var skipNext int
+	var snoozeUntil sql.NullString
+	var createdAt, updatedAt string
+	var musicSetID, musicSonosFavoriteID, templateID, arcTVPolicy sql.NullString
+	var musicSonosFavoriteName, musicSonosFavoriteArtworkUrl sql.NullString
+	var musicSonosFavoriteServiceLogoUrl, musicSonosFavoriteServiceName sql.NullString
+	var musicContentType, musicContentJSON sql.NullString
+	var musicNoRepeatWindowMinutes sql.NullInt64
+	var musicFallbackBehavior sql.NullString
+	var occasionsEnabled int
+	var lastRunAt sql.NullString
+
+	err := row.Scan(
+		&routine.RoutineID,
+		&routine.Name,
+		&enabled,
+		&routine.Timezone,
+		&routine.ScheduleType,
+		&weekdaysJSON,
+		&scheduleMonth,
+		&scheduleDay,
+		&routine.ScheduleTime,
+		&routine.HolidayBehavior,
+		&routine.SceneID,
+		&musicPolicyType,
+		&speakersJSON,
+		&skipNext,
+		&snoozeUntil,
+		&createdAt,
+		&updatedAt,
+		&musicSetID,
+		&musicSonosFavoriteID,
+		&templateID,
+		&arcTVPolicy,
+		&musicSonosFavoriteName,
+		&musicSonosFavoriteArtworkUrl,
+		&musicSonosFavoriteServiceLogoUrl,
+		&musicSonosFavoriteServiceName,
+		&musicContentType,
+		&musicContentJSON,
+		&musicNoRepeatWindowMinutes,
+		&musicFallbackBehavior,
+		&occasionsEnabled,
+		&lastRunAt,
+		&deletedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+
+	result, err := r.parseRoutine(&routine, enabled, weekdaysJSON, scheduleMonth, scheduleDay, musicPolicyType, speakersJSON, skipNext, snoozeUntil, createdAt, updatedAt, musicSetID, musicSonosFavoriteID, templateID, arcTVPolicy, musicSonosFavoriteName, musicSonosFavoriteArtworkUrl, musicSonosFavoriteServiceLogoUrl, musicSonosFavoriteServiceName, musicContentType, musicContentJSON, musicNoRepeatWindowMinutes, musicFallbackBehavior, occasionsEnabled, lastRunAt)
+	if err != nil {
+		return nil, false, err
+	}
+
+	isDeleted := deletedAt.Valid && deletedAt.String != ""
+	return result, isDeleted, nil
 }
 
 // scanRoutineRow scans a single row into a Routine.
@@ -442,14 +526,14 @@ func (r *RoutinesRepository) Create(input CreateRoutineInput) (*Routine, error) 
 	return r.GetByID(routineID)
 }
 
-// List retrieves routines with pagination and optional filtering.
+// List retrieves routines with pagination and optional filtering (excludes soft-deleted).
 func (r *RoutinesRepository) List(limit, offset int, enabledOnly bool) ([]Routine, int, error) {
 	var total int
 	var countQuery string
 	if enabledOnly {
-		countQuery = "SELECT COUNT(*) FROM routines WHERE enabled = 1"
+		countQuery = "SELECT COUNT(*) FROM routines WHERE enabled = 1 AND deleted_at IS NULL"
 	} else {
-		countQuery = "SELECT COUNT(*) FROM routines"
+		countQuery = "SELECT COUNT(*) FROM routines WHERE deleted_at IS NULL"
 	}
 	err := r.reader.QueryRow(countQuery).Scan(&total)
 	if err != nil {
@@ -468,7 +552,7 @@ func (r *RoutinesRepository) List(limit, offset int, enabledOnly bool) ([]Routin
 				music_content_type, music_content_json, music_no_repeat_window_minutes,
 				music_fallback_behavior, occasions_enabled, last_run_at
 			FROM routines
-			WHERE enabled = 1
+			WHERE enabled = 1 AND deleted_at IS NULL
 			ORDER BY created_at DESC
 			LIMIT ? OFFSET ?
 		`
@@ -483,6 +567,7 @@ func (r *RoutinesRepository) List(limit, offset int, enabledOnly bool) ([]Routin
 				music_content_type, music_content_json, music_no_repeat_window_minutes,
 				music_fallback_behavior, occasions_enabled, last_run_at
 			FROM routines
+			WHERE deleted_at IS NULL
 			ORDER BY created_at DESC
 			LIMIT ? OFFSET ?
 		`
@@ -716,9 +801,13 @@ func (r *RoutinesRepository) ClearSnooze(routineID string) (*Routine, error) {
 	return r.GetByID(routineID)
 }
 
-// Delete deletes a routine.
+// Delete soft-deletes a routine by setting deleted_at timestamp.
 func (r *RoutinesRepository) Delete(routineID string) error {
-	result, err := r.writer.Exec("DELETE FROM routines WHERE routine_id = ?", routineID)
+	now := nowISO()
+	result, err := r.writer.Exec(
+		"UPDATE routines SET deleted_at = ?, updated_at = ? WHERE routine_id = ? AND deleted_at IS NULL",
+		now, now, routineID,
+	)
 	if err != nil {
 		return err
 	}
@@ -734,6 +823,79 @@ func (r *RoutinesRepository) Delete(routineID string) error {
 	return nil
 }
 
+// Restore restores a soft-deleted routine by clearing deleted_at.
+func (r *RoutinesRepository) Restore(routineID string) (*Routine, error) {
+	now := nowISO()
+	result, err := r.writer.Exec(
+		"UPDATE routines SET deleted_at = NULL, updated_at = ? WHERE routine_id = ? AND deleted_at IS NOT NULL",
+		now, routineID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if affected == 0 {
+		// Could be not found or not deleted - caller should check with GetByIDIncludingDeleted
+		return nil, sql.ErrNoRows
+	}
+
+	return r.GetByID(routineID)
+}
+
+// HardDelete permanently removes a soft-deleted routine from the database.
+// Used by cleanup job to purge old soft-deleted records.
+func (r *RoutinesRepository) HardDelete(routineID string) error {
+	result, err := r.writer.Exec(
+		"DELETE FROM routines WHERE routine_id = ? AND deleted_at IS NOT NULL",
+		routineID,
+	)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+// GetExpiredSoftDeletes returns routine IDs that were soft-deleted before the cutoff time.
+func (r *RoutinesRepository) GetExpiredSoftDeletes(cutoff time.Time) ([]string, error) {
+	cutoffStr := cutoff.UTC().Format(time.RFC3339)
+	rows, err := r.reader.Query(
+		"SELECT routine_id FROM routines WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+		cutoffStr,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return ids, nil
+}
+
 // UpdateNextRunAt updates the next run time for a routine.
 // Note: The current schema doesn't have a next_run_at column, so this updates updated_at.
 func (r *RoutinesRepository) UpdateNextRunAt(routineID string, nextRunAt time.Time) error {
@@ -745,7 +907,7 @@ func (r *RoutinesRepository) UpdateNextRunAt(routineID string, nextRunAt time.Ti
 	return err
 }
 
-// GetDueRoutines returns routines that are due to run.
+// GetDueRoutines returns routines that are due to run (excludes soft-deleted).
 // Note: This returns all enabled routines that are not snoozed and don't have skip_next set.
 // The actual scheduling logic is handled by the scheduler service.
 func (r *RoutinesRepository) GetDueRoutines(now time.Time) ([]Routine, error) {
@@ -759,7 +921,7 @@ func (r *RoutinesRepository) GetDueRoutines(now time.Time) ([]Routine, error) {
 			music_content_type, music_content_json, music_no_repeat_window_minutes,
 			music_fallback_behavior, occasions_enabled, last_run_at
 		FROM routines
-		WHERE enabled = 1 AND skip_next = 0
+		WHERE enabled = 1 AND skip_next = 0 AND deleted_at IS NULL
 		  AND (snooze_until IS NULL OR snooze_until <= ?)
 	`, now.UTC().Format(time.RFC3339))
 	if err != nil {

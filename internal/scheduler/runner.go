@@ -252,46 +252,61 @@ func (r *JobRunner) handleJobFailure(job *Job, execErr error) {
 	}
 }
 
-// recoverStaleJobs finds jobs that were claimed but not completed and resets them.
+// recoverStaleJobs finds jobs that were claimed or running but not completed and resets them.
 // This handles crash recovery scenarios where a job runner died while processing a job.
 func (r *JobRunner) recoverStaleJobs() {
+	// Recover stale CLAIMED jobs
 	staleJobs, err := r.jobsRepo.GetStaleClaimedJobs(StaleJobTimeout)
 	if err != nil {
-		r.logger.Printf("Error fetching stale jobs: %v", err)
+		r.logger.Printf("Error fetching stale claimed jobs: %v", err)
+	} else if len(staleJobs) == 0 {
+		r.logger.Println("No stale claimed jobs to recover")
+	} else {
+		r.logger.Printf("Found %d stale claimed job(s) to recover", len(staleJobs))
+		for _, job := range staleJobs {
+			r.recoverStaleJob(&job, "claim")
+		}
+	}
+
+	// Recover stale RUNNING jobs
+	staleRunning, err := r.jobsRepo.GetStaleRunningJobs(StaleJobTimeout)
+	if err != nil {
+		r.logger.Printf("Error fetching stale running jobs: %v", err)
+	} else if len(staleRunning) == 0 {
+		r.logger.Println("No stale running jobs to recover")
+	} else {
+		r.logger.Printf("Found %d stale running job(s) to recover", len(staleRunning))
+		for _, job := range staleRunning {
+			r.recoverStaleJob(&job, "running")
+		}
+	}
+}
+
+// recoverStaleJob handles recovery of a single stale job.
+func (r *JobRunner) recoverStaleJob(job *Job, staleType string) {
+	timeStr := "unknown"
+	if staleType == "claim" && job.ClaimedAt != nil {
+		timeStr = job.ClaimedAt.Format(time.RFC3339)
+	} else if staleType == "running" && job.StartedAt != nil {
+		timeStr = job.StartedAt.Format(time.RFC3339)
+	}
+	r.logger.Printf("Recovering stale %s job %s (since: %s)", staleType, job.JobID, timeStr)
+
+	// Reset job to pending status for retry
+	errMsg := fmt.Sprintf("job recovered after stale %s timeout", staleType)
+	canRetry := job.Attempts < r.maxRetries
+
+	if err := r.jobsRepo.FailJob(job.JobID, errMsg, canRetry); err != nil {
+		r.logger.Printf("Error recovering stale job %s: %v", job.JobID, err)
 		return
 	}
 
-	if len(staleJobs) == 0 {
-		r.logger.Println("No stale jobs to recover")
-		return
-	}
-
-	r.logger.Printf("Found %d stale claimed job(s) to recover", len(staleJobs))
-
-	for _, job := range staleJobs {
-		claimedAtStr := "unknown"
-		if job.ClaimedAt != nil {
-			claimedAtStr = job.ClaimedAt.Format(time.RFC3339)
-		}
-		r.logger.Printf("Recovering stale job %s (claimed at: %s)",
-			job.JobID, claimedAtStr)
-
-		// Reset job to pending status for retry
-		errMsg := "job recovered after stale claim timeout"
-		canRetry := job.Attempts < r.maxRetries
-
-		if err := r.jobsRepo.FailJob(job.JobID, errMsg, canRetry); err != nil {
-			r.logger.Printf("Error recovering stale job %s: %v", job.JobID, err)
-			continue
-		}
-
-		if canRetry {
-			r.logger.Printf("Stale job %s reset to pending for retry (attempt %d/%d)",
-				job.JobID, job.Attempts+1, r.maxRetries)
-		} else {
-			r.logger.Printf("Stale job %s marked as failed (max retries exceeded)",
-				job.JobID)
-		}
+	if canRetry {
+		r.logger.Printf("Stale job %s reset to pending for retry (attempt %d/%d)",
+			job.JobID, job.Attempts+1, r.maxRetries)
+	} else {
+		r.logger.Printf("Stale job %s marked as failed (max retries exceeded)",
+			job.JobID)
 	}
 }
 

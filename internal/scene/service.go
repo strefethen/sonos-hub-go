@@ -81,20 +81,16 @@ func (s *Service) UpdateScene(sceneID string, input UpdateSceneInput) (*Scene, e
 	return s.scenesRepo.Update(sceneID, input)
 }
 
-// DeleteScene deletes a scene.
-// Returns an error if the scene is referenced by routines.
+// DeleteScene soft-deletes a scene.
+// With soft delete, we no longer need to check for routine references since
+// the scene can be restored if the routine is restored.
 func (s *Service) DeleteScene(sceneID string) error {
-	// Check if scene is referenced by routines
-	var count int
-	err := s.reader.QueryRow("SELECT COUNT(*) FROM routines WHERE scene_id = ?", sceneID).Scan(&count)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	if count > 0 {
-		return &SceneInUseError{SceneID: sceneID, RoutineCount: count}
-	}
-
 	return s.scenesRepo.Delete(sceneID)
+}
+
+// RestoreScene restores a soft-deleted scene.
+func (s *Service) RestoreScene(sceneID string) (*Scene, error) {
+	return s.scenesRepo.Restore(sceneID)
 }
 
 // ExecuteScene starts an async execution of a scene.

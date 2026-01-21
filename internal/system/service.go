@@ -10,6 +10,7 @@ import (
 
 	"github.com/strefethen/sonos-hub-go/internal/config"
 	"github.com/strefethen/sonos-hub-go/internal/devices"
+	"github.com/strefethen/sonos-hub-go/internal/music"
 )
 
 // Version is the hub version, set at build time or defaulted.
@@ -33,13 +34,14 @@ type Service struct {
 	logger           *log.Logger
 	reader           *sql.DB // Read-only queries
 	deviceService    *devices.Service
+	musicService     *music.Service
 	schedulerStatus  SchedulerStatusProvider
 	startTime        time.Time
 }
 
 // NewService creates a new system service.
 // Accepts a DBPair but only uses the reader (read-only service).
-func NewService(cfg config.Config, dbPair DBPair, logger *log.Logger, deviceService *devices.Service, schedulerStatus SchedulerStatusProvider) *Service {
+func NewService(cfg config.Config, dbPair DBPair, logger *log.Logger, deviceService *devices.Service, musicService *music.Service, schedulerStatus SchedulerStatusProvider) *Service {
 	if logger == nil {
 		logger = log.Default()
 	}
@@ -49,6 +51,7 @@ func NewService(cfg config.Config, dbPair DBPair, logger *log.Logger, deviceServ
 		logger:          logger,
 		reader:          dbPair.Reader(),
 		deviceService:   deviceService,
+		musicService:    musicService,
 		schedulerStatus: schedulerStatus,
 		startTime:       time.Now(),
 	}
@@ -166,6 +169,9 @@ func (s *Service) GetDashboardData() (*DashboardData, error) {
 
 	// Query PENDING jobs for today, joined with routines for details
 	// This mirrors Node.js: schedulerService.queryJobs({ status: 'PENDING', from: now, to: endOfToday })
+	// Use subquery to deduplicate by routine_id, returning only the earliest job per routine
+	nowStr := now.UTC().Format(time.RFC3339)
+	endOfTodayStr := endOfToday.UTC().Format(time.RFC3339)
 	rows, err := s.reader.Query(`
 		SELECT j.job_id, j.routine_id, j.scheduled_for,
 		       r.name, r.scene_id, r.speakers_json,
@@ -177,9 +183,18 @@ func (s *Service) GetDashboardData() (*DashboardData, error) {
 		WHERE j.status = 'PENDING'
 		  AND j.scheduled_for >= ?
 		  AND j.scheduled_for <= ?
+		  AND j.job_id = (
+		      SELECT j2.job_id FROM jobs j2
+		      WHERE j2.routine_id = j.routine_id
+		        AND j2.status = 'PENDING'
+		        AND j2.scheduled_for >= ?
+		        AND j2.scheduled_for <= ?
+		      ORDER BY j2.scheduled_for ASC
+		      LIMIT 1
+		  )
 		ORDER BY j.scheduled_for ASC
 		LIMIT 20
-	`, now.UTC().Format(time.RFC3339), endOfToday.UTC().Format(time.RFC3339))
+	`, nowStr, endOfTodayStr, nowStr, endOfTodayStr)
 	if err != nil {
 		s.logger.Printf("Failed to query jobs for dashboard: %v", err)
 		return dashboard, nil
@@ -256,7 +271,7 @@ func (s *Service) GetDashboardData() (*DashboardData, error) {
 						Type       string `json:"type"`
 						Title      string `json:"title"`
 						Name       string `json:"name"`
-						ArtworkURL string `json:"artwork_url"`
+						ArtworkURL string `json:"artworkUrl"`
 					}
 					if err := json.Unmarshal([]byte(musicContentJSON.String), &content); err == nil {
 						if content.Type == "sonos_favorite" && content.Name != "" {
@@ -280,12 +295,28 @@ func (s *Service) GetDashboardData() (*DashboardData, error) {
 			case "ROTATION", "SHUFFLE":
 				preview := "From music set"
 				summary.MusicPreview = &preview
+				// Get artwork from music set's first item
+				if musicSetID.Valid && musicSetID.String != "" && s.musicService != nil {
+					enrichment, err := s.musicService.GetSetEnrichment(musicSetID.String)
+					if err == nil && enrichment != nil && enrichment.ArtworkURL != nil {
+						summary.ArtworkURL = enrichment.ArtworkURL
+					}
+				}
 			}
 		}
 
 		// Set template ID
 		if templateID.Valid && templateID.String != "" {
 			summary.TemplateID = &templateID.String
+		}
+
+		// Fallback: If no artwork yet, try to get template image
+		// Priority order: music content artwork > sonos favorite artwork > music set artwork > template image
+		if summary.ArtworkURL == nil && templateID.Valid && templateID.String != "" {
+			templateImg := s.getTemplateImageURL(templateID.String)
+			if templateImg != "" {
+				summary.ArtworkURL = &templateImg
+			}
 		}
 
 		dashboard.UpcomingRoutines = append(dashboard.UpcomingRoutines, summary)
@@ -446,5 +477,18 @@ func (s *Service) checkAttentionItems() []AttentionItem {
 	}
 
 	return items
+}
+
+// getTemplateImageURL returns the image URL for a template if it has one.
+func (s *Service) getTemplateImageURL(templateID string) string {
+	var imageName sql.NullString
+	err := s.reader.QueryRow(
+		`SELECT image_name FROM routine_templates WHERE template_id = ?`,
+		templateID,
+	).Scan(&imageName)
+	if err != nil || !imageName.Valid || imageName.String == "" {
+		return ""
+	}
+	return "/v1/assets/templates/" + imageName.String + ".jpg"
 }
 

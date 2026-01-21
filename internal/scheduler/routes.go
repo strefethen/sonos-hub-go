@@ -35,6 +35,7 @@ func RegisterRoutes(router chi.Router, routinesRepo *RoutinesRepository, jobsRep
 	router.Method(http.MethodPost, "/v1/routines/{routine_id}/skip", api.Handler(skipNextOccurrence(routinesRepo, deviceService, musicService)))
 	router.Method(http.MethodPost, "/v1/routines/{routine_id}/unskip", api.Handler(unskipNextOccurrence(routinesRepo, deviceService, musicService)))
 	router.Method(http.MethodPost, "/v1/routines/{routine_id}/run", api.Handler(runRoutine(routinesRepo, jobsRepo)))
+	router.Method(http.MethodPost, "/v1/routines/{routine_id}/restore", api.Handler(restoreRoutine(routinesRepo, sceneService, deviceService, musicService)))
 	router.Method(http.MethodPost, "/v1/routines/test", api.Handler(testRoutine(sceneService)))
 
 	// Jobs
@@ -361,7 +362,7 @@ func deleteRoutine(routinesRepo *RoutinesRepository, sceneService *scene.Service
 			return apperrors.NewAppError(apperrors.ErrorCodeRoutineNotFound, "Routine not found", 404, map[string]any{"routine_id": routineID}, nil)
 		}
 
-		// Delete routine first (jobs deleted via CASCADE)
+		// Delete routine first (jobs deleted via CASCADE, play_history set to NULL via CASCADE)
 		err = routinesRepo.Delete(routineID)
 		if err != nil {
 			if err == sql.ErrNoRows {
@@ -378,6 +379,48 @@ func deleteRoutine(routinesRepo *RoutinesRepository, sceneService *scene.Service
 		// Return 204 No Content with empty body (Node.js parity)
 		w.WriteHeader(http.StatusNoContent)
 		return nil
+	}
+}
+
+func restoreRoutine(routinesRepo *RoutinesRepository, sceneService *scene.Service, deviceService *devices.Service, musicService *music.Service) func(w http.ResponseWriter, r *http.Request) error {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		routineID := chi.URLParam(r, "routine_id")
+
+		// Check if routine exists and get its deletion state
+		routine, isDeleted, err := routinesRepo.GetByIDIncludingDeleted(routineID)
+		if err != nil {
+			return apperrors.NewInternalError("Failed to get routine")
+		}
+		if routine == nil {
+			// Never existed or already hard-deleted by cleanup
+			return apperrors.NewAppError(apperrors.ErrorCodeRoutineNotFound, "Routine not found", 404, map[string]any{"routine_id": routineID}, nil)
+		}
+		if !isDeleted {
+			// Routine exists but is not deleted (409 Conflict)
+			return apperrors.NewConflictError("Routine is not deleted", map[string]any{"routine_id": routineID})
+		}
+
+		// Restore the routine
+		restoredRoutine, err := routinesRepo.Restore(routineID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return apperrors.NewAppError(apperrors.ErrorCodeRoutineNotFound, "Routine not found", 404, map[string]any{"routine_id": routineID}, nil)
+			}
+			return apperrors.NewInternalError("Failed to restore routine")
+		}
+
+		// Also restore the associated scene
+		if restoredRoutine.SceneID != "" && sceneService != nil {
+			_, _ = sceneService.RestoreScene(restoredRoutine.SceneID)
+		}
+
+		// Build device room map for speaker enrichment
+		deviceRoomMap := buildDeviceRoomMap(deviceService)
+
+		log.Printf("Restored routine %s and scene %s", routineID, restoredRoutine.SceneID)
+
+		// Stripe-style: return resource directly
+		return api.WriteResource(w, http.StatusOK, formatRoutineWithEnrichment(restoredRoutine, deviceRoomMap, musicService))
 	}
 }
 
@@ -1096,14 +1139,22 @@ func formatJob(job *Job) map[string]any {
 // formatJobAsExecution formats a job as an execution matching Node.js /v1/executions format
 func formatJobAsExecution(job *Job, routineNames map[string]string) map[string]any {
 	// Map job status to iOS outcome
-	outcome := "failed"
+	var outcome string
 	switch job.Status {
-	case JobStatusSkipped:
-		outcome = "skipped"
-	case JobStatusFailed:
-		outcome = "failed"
+	case JobStatusPending, JobStatusScheduled, JobStatusClaimed:
+		outcome = "pending"
+	case JobStatusRunning:
+		outcome = "running"
 	case JobStatusCompleted:
 		outcome = "success"
+	case JobStatusFailed:
+		outcome = "failed"
+	case JobStatusSkipped:
+		outcome = "skipped"
+	case JobStatusRetrying:
+		outcome = "retrying"
+	default:
+		outcome = "unknown"
 	}
 
 	// Look up routine name from map

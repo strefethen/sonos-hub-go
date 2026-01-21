@@ -118,7 +118,17 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 	// Set up device discovery callback to subscribe to UPnP events when devices are found
 	if cfg.UPnPEventsEnabled && !options.DisableDiscovery {
 		deviceService.SetDiscoveryCallback(func(discovered []devices.DeviceInfo) {
+			alreadySubscribed := 0
+			newDevices := 0
+
 			for _, device := range discovered {
+				// Skip if already fully subscribed - avoids spawning unnecessary goroutines
+				if eventManager.IsDeviceFullySubscribed(device.IP) {
+					alreadySubscribed++
+					continue
+				}
+
+				newDevices++
 				go func(ip, udn string) {
 					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 					defer cancel()
@@ -126,6 +136,12 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 						log.Printf("UPNP: Failed to subscribe to %s: %v", ip, err)
 					}
 				}(device.IP, device.UDN)
+			}
+
+			// Log discovery callback summary (only when there are new devices or first run)
+			if newDevices > 0 || alreadySubscribed == 0 {
+				log.Printf("UPNP: Discovery callback: %d devices, %d already subscribed, %d new",
+					len(discovered), alreadySubscribed, newDevices)
 			}
 		})
 	}
@@ -240,8 +256,8 @@ func NewHandler(cfg config.Config, options Options) (http.Handler, func(context.
 	audit.RegisterRoutes(router, auditService)
 	auditService.StartPruneJob()
 
-	// Create system service (with scheduler for status reporting)
-	systemService := system.NewService(cfg, dbPair, nil, deviceService, schedulerService)
+	// Create system service (with scheduler for status reporting, music service for set enrichment)
+	systemService := system.NewService(cfg, dbPair, nil, deviceService, musicService, schedulerService)
 	system.RegisterRoutes(router, systemService)
 
 	// Create templates service

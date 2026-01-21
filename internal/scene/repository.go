@@ -79,21 +79,64 @@ func (r *ScenesRepository) Create(input CreateSceneInput) (*Scene, error) {
 	return r.GetByID(sceneID)
 }
 
-// GetByID retrieves a scene by ID.
+// GetByID retrieves a scene by ID (excludes soft-deleted scenes).
 func (r *ScenesRepository) GetByID(sceneID string) (*Scene, error) {
 	row := r.reader.QueryRow(`
 		SELECT scene_id, name, description, coordinator_preference, fallback_policy, members, volume_ramp, teardown, created_at, updated_at
 		FROM scenes
-		WHERE scene_id = ?
+		WHERE scene_id = ? AND deleted_at IS NULL
 	`, sceneID)
 
 	return r.scanScene(row)
 }
 
-// List retrieves scenes with pagination.
+// GetByIDIncludingDeleted retrieves a scene by ID including soft-deleted ones (for restore).
+func (r *ScenesRepository) GetByIDIncludingDeleted(sceneID string) (*Scene, bool, error) {
+	var deletedAt sql.NullString
+	var scene Scene
+	var description sql.NullString
+	var membersJSON string
+	var volumeRampJSON sql.NullString
+	var teardownJSON sql.NullString
+	var createdAt, updatedAt string
+
+	err := r.reader.QueryRow(`
+		SELECT scene_id, name, description, coordinator_preference, fallback_policy, members, volume_ramp, teardown, created_at, updated_at, deleted_at
+		FROM scenes
+		WHERE scene_id = ?
+	`, sceneID).Scan(
+		&scene.SceneID,
+		&scene.Name,
+		&description,
+		&scene.CoordinatorPreference,
+		&scene.FallbackPolicy,
+		&membersJSON,
+		&volumeRampJSON,
+		&teardownJSON,
+		&createdAt,
+		&updatedAt,
+		&deletedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+
+	result, err := r.parseScene(&scene, description, membersJSON, volumeRampJSON, teardownJSON, createdAt, updatedAt)
+	if err != nil {
+		return nil, false, err
+	}
+
+	isDeleted := deletedAt.Valid && deletedAt.String != ""
+	return result, isDeleted, nil
+}
+
+// List retrieves scenes with pagination (excludes soft-deleted).
 func (r *ScenesRepository) List(limit, offset int) ([]Scene, int, error) {
 	var total int
-	err := r.reader.QueryRow("SELECT COUNT(*) FROM scenes").Scan(&total)
+	err := r.reader.QueryRow("SELECT COUNT(*) FROM scenes WHERE deleted_at IS NULL").Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -101,6 +144,7 @@ func (r *ScenesRepository) List(limit, offset int) ([]Scene, int, error) {
 	rows, err := r.reader.Query(`
 		SELECT scene_id, name, description, coordinator_preference, fallback_policy, members, volume_ramp, teardown, created_at, updated_at
 		FROM scenes
+		WHERE deleted_at IS NULL
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
 	`, limit, offset)
@@ -208,15 +252,13 @@ func (r *ScenesRepository) Update(sceneID string, input UpdateSceneInput) (*Scen
 	return r.GetByID(sceneID)
 }
 
-// Delete deletes a scene and its executions.
+// Delete soft-deletes a scene by setting deleted_at timestamp.
 func (r *ScenesRepository) Delete(sceneID string) error {
-	// Delete executions first (FK constraint)
-	_, err := r.writer.Exec("DELETE FROM scene_executions WHERE scene_id = ?", sceneID)
-	if err != nil {
-		return err
-	}
-
-	result, err := r.writer.Exec("DELETE FROM scenes WHERE scene_id = ?", sceneID)
+	now := nowISO()
+	result, err := r.writer.Exec(
+		"UPDATE scenes SET deleted_at = ?, updated_at = ? WHERE scene_id = ? AND deleted_at IS NULL",
+		now, now, sceneID,
+	)
 	if err != nil {
 		return err
 	}
@@ -230,6 +272,85 @@ func (r *ScenesRepository) Delete(sceneID string) error {
 	}
 
 	return nil
+}
+
+// Restore restores a soft-deleted scene by clearing deleted_at.
+func (r *ScenesRepository) Restore(sceneID string) (*Scene, error) {
+	now := nowISO()
+	result, err := r.writer.Exec(
+		"UPDATE scenes SET deleted_at = NULL, updated_at = ? WHERE scene_id = ? AND deleted_at IS NOT NULL",
+		now, sceneID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if affected == 0 {
+		// Could be not found or not deleted
+		return nil, sql.ErrNoRows
+	}
+
+	return r.GetByID(sceneID)
+}
+
+// HardDelete permanently removes a soft-deleted scene and its executions.
+// Used by cleanup job to purge old soft-deleted records.
+func (r *ScenesRepository) HardDelete(sceneID string) error {
+	// Delete executions first (FK constraint)
+	_, err := r.writer.Exec("DELETE FROM scene_executions WHERE scene_id = ?", sceneID)
+	if err != nil {
+		return err
+	}
+
+	result, err := r.writer.Exec(
+		"DELETE FROM scenes WHERE scene_id = ? AND deleted_at IS NOT NULL",
+		sceneID,
+	)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+// GetExpiredSoftDeletes returns scene IDs that were soft-deleted before the cutoff time.
+func (r *ScenesRepository) GetExpiredSoftDeletes(cutoff time.Time) ([]string, error) {
+	cutoffStr := cutoff.UTC().Format(time.RFC3339)
+	rows, err := r.reader.Query(
+		"SELECT scene_id FROM scenes WHERE deleted_at IS NOT NULL AND deleted_at < ?",
+		cutoffStr,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return ids, nil
 }
 
 func (r *ScenesRepository) scanScene(row *sql.Row) (*Scene, error) {

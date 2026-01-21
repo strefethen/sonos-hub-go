@@ -32,6 +32,7 @@ func RegisterRoutes(router chi.Router, service *Service, spotifyManager *spotify
 	router.Method(http.MethodGet, "/v1/music/sets/{set_id}", api.Handler(getSet(service)))
 	router.Method(http.MethodPatch, "/v1/music/sets/{set_id}", api.Handler(updateSet(service)))
 	router.Method(http.MethodDelete, "/v1/music/sets/{set_id}", api.Handler(deleteSet(service)))
+	router.Method(http.MethodPost, "/v1/music/sets/{set_id}/restore", api.Handler(restoreSet(service)))
 
 	// Item management
 	router.Method(http.MethodPost, "/v1/music/sets/{set_id}/items", api.Handler(addItem(service)))
@@ -137,6 +138,18 @@ func listSets(service *Service) func(w http.ResponseWriter, r *http.Request) err
 						if !seenLogos[*item.ServiceLogoURL] {
 							seenLogos[*item.ServiceLogoURL] = true
 							logos = append(logos, *item.ServiceLogoURL)
+						}
+					}
+				}
+				// If set has no artwork, use first item's artwork
+				if formattedSet["artwork_url"] == nil && len(items) > 0 {
+					firstItem := items[0]
+					if firstItem.ArtworkURL != nil && *firstItem.ArtworkURL != "" {
+						formattedSet["artwork_url"] = *firstItem.ArtworkURL
+					} else if firstItem.ContentJSON != nil && *firstItem.ContentJSON != "" {
+						var metadata ContentMetadata
+						if err := json.Unmarshal([]byte(*firstItem.ContentJSON), &metadata); err == nil && metadata.ArtworkURL != "" {
+							formattedSet["artwork_url"] = metadata.ArtworkURL
 						}
 					}
 				}
@@ -357,6 +370,55 @@ func deleteSet(service *Service) func(w http.ResponseWriter, r *http.Request) er
 
 		w.WriteHeader(http.StatusNoContent)
 		return nil
+	}
+}
+
+// restoreSet handles POST /v1/music/sets/{set_id}/restore
+// Restores a soft-deleted music set
+func restoreSet(service *Service) func(w http.ResponseWriter, r *http.Request) error {
+	return func(w http.ResponseWriter, r *http.Request) error {
+		setID := chi.URLParam(r, "set_id")
+
+		// Check if set exists and get its deletion state
+		set, isDeleted, err := service.GetSetIncludingDeleted(setID)
+		if err != nil {
+			return apperrors.NewInternalError("Failed to get set")
+		}
+		if set == nil {
+			// Never existed or already hard-deleted by cleanup
+			return apperrors.NewAppError(apperrors.ErrorCodeSetNotFound, "Set not found", 404, map[string]any{"set_id": setID}, nil)
+		}
+		if !isDeleted {
+			// Set exists but is not deleted (409 Conflict)
+			return apperrors.NewConflictError("Set is not deleted", map[string]any{"set_id": setID})
+		}
+
+		// Restore the set
+		restoredSet, err := service.RestoreSet(setID)
+		if err != nil {
+			if isSetNotFoundError(err) {
+				return apperrors.NewAppError(apperrors.ErrorCodeSetNotFound, "Set not found", 404, map[string]any{"set_id": setID}, nil)
+			}
+			return apperrors.NewInternalError("Failed to restore set")
+		}
+
+		// Stripe-style: return resource directly
+		setResponse := map[string]any{
+			"object":           api.ObjectMusicSet,
+			"id":               restoredSet.SetID,
+			"name":             restoredSet.Name,
+			"selection_policy": restoredSet.SelectionPolicy,
+			"current_index":    restoredSet.CurrentIndex,
+			"created_at":       api.RFC3339Millis(restoredSet.CreatedAt),
+			"updated_at":       api.RFC3339Millis(restoredSet.UpdatedAt),
+		}
+		if restoredSet.OccasionStart != nil && *restoredSet.OccasionStart != "" {
+			setResponse["occasion_start"] = *restoredSet.OccasionStart
+		}
+		if restoredSet.OccasionEnd != nil && *restoredSet.OccasionEnd != "" {
+			setResponse["occasion_end"] = *restoredSet.OccasionEnd
+		}
+		return api.WriteResource(w, http.StatusOK, setResponse)
 	}
 }
 
