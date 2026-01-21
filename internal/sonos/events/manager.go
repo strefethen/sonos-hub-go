@@ -26,6 +26,9 @@ type Manager struct {
 	localIP        string
 	port           int
 
+	// Track subscription state per device for idempotency and backoff
+	subscribedDevices map[string]*DeviceSubscriptionState // device IP -> state
+
 	stopCh         chan struct{}
 	stopped        bool
 	stats          ManagerStats
@@ -37,14 +40,15 @@ type Manager struct {
 // NewManager creates a new event subscription manager.
 func NewManager(config ManagerConfig, port int, zoneCache *sonos.ZoneGroupCache) *Manager {
 	return &Manager{
-		config:        config,
-		subClient:     NewSubscriptionClient(10 * time.Second),
-		stateCache:    NewStateCache(config.StateCacheTTL),
-		zoneCache:     zoneCache,
-		subscriptions: make(map[string]*Subscription),
-		deviceSubs:    make(map[string][]string),
-		port:          port,
-		stopCh:        make(chan struct{}),
+		config:            config,
+		subClient:         NewSubscriptionClient(10 * time.Second),
+		stateCache:        NewStateCache(config.StateCacheTTL),
+		zoneCache:         zoneCache,
+		subscriptions:     make(map[string]*Subscription),
+		deviceSubs:        make(map[string][]string),
+		subscribedDevices: make(map[string]*DeviceSubscriptionState),
+		port:              port,
+		stopCh:            make(chan struct{}),
 		stats: ManagerStats{
 			Enabled: config.Enabled,
 		},
@@ -102,14 +106,53 @@ func (m *Manager) Stop(ctx context.Context) error {
 }
 
 // SubscribeDevice subscribes to events from a Sonos device.
-// It subscribes to all configured services.
+// It subscribes to all configured services. This method is idempotent - calling it
+// for an already-subscribed device is a no-op for services that are already subscribed.
 func (m *Manager) SubscribeDevice(ctx context.Context, deviceIP, deviceUDN string) error {
 	if !m.config.Enabled {
 		return nil
 	}
 
+	// Check if already fully subscribed (fast path, avoids goroutine work)
+	if m.IsDeviceFullySubscribed(deviceIP) {
+		return nil
+	}
+
+	// Check backoff before attempting subscription
+	if !m.shouldAttemptSubscription(deviceIP) {
+		return nil
+	}
+
+	// Get or create device state
+	m.mu.Lock()
+	state := m.subscribedDevices[deviceIP]
+	if state == nil {
+		state = &DeviceSubscriptionState{
+			DeviceIP:     deviceIP,
+			DeviceUDN:    deviceUDN,
+			Services:     make(map[ServiceType]string),
+			SubscribedAt: m.now(),
+		}
+		m.subscribedDevices[deviceIP] = state
+	}
+	state.LastAttemptAt = m.now()
+	// Copy existing services to check which ones need subscription
+	existingServices := make(map[ServiceType]string)
+	for k, v := range state.Services {
+		existingServices[k] = v
+	}
+	m.mu.Unlock()
+
 	paths := EventPaths()
+	failureCount := 0
+	successCount := 0
+
 	for _, serviceType := range m.config.Services {
+		// Skip if already subscribed to this service
+		if _, ok := existingServices[serviceType]; ok {
+			continue
+		}
+
 		path, ok := paths[serviceType]
 		if !ok {
 			continue
@@ -124,6 +167,7 @@ func (m *Manager) SubscribeDevice(ctx context.Context, deviceIP, deviceUDN strin
 			m.mu.Lock()
 			m.stats.SubscriptionFailures++
 			m.mu.Unlock()
+			failureCount++
 			continue
 		}
 
@@ -135,18 +179,37 @@ func (m *Manager) SubscribeDevice(ctx context.Context, deviceIP, deviceUDN strin
 		}
 
 		sub := &Subscription{
-			SID:         sid,
-			DeviceIP:    deviceIP,
-			DeviceUDN:   deviceUDN,
-			ServiceType: serviceType,
-			CallbackURL: callbackURL,
-			Timeout:     timeout,
+			SID:          sid,
+			DeviceIP:     deviceIP,
+			DeviceUDN:    deviceUDN,
+			ServiceType:  serviceType,
+			CallbackURL:  callbackURL,
+			Timeout:      timeout,
 			SubscribedAt: m.now(),
-			RenewAt:     m.now().Add(time.Duration(renewIn) * time.Second),
+			RenewAt:      m.now().Add(time.Duration(renewIn) * time.Second),
 		}
 
 		m.addSubscription(sub)
+
+		// Update device state with the new service subscription
+		m.mu.Lock()
+		if m.subscribedDevices[deviceIP] != nil {
+			m.subscribedDevices[deviceIP].Services[serviceType] = sid
+			m.subscribedDevices[deviceIP].FailureCount = 0 // Reset on success
+		}
+		m.mu.Unlock()
+
+		successCount++
 		log.Printf("UPNP: Subscribed to %s on %s (SID: %s, timeout: %ds)", serviceType, deviceIP, sid, timeout)
+	}
+
+	// Update failure count for backoff
+	if failureCount > 0 && successCount == 0 {
+		m.mu.Lock()
+		if m.subscribedDevices[deviceIP] != nil {
+			m.subscribedDevices[deviceIP].FailureCount++
+		}
+		m.mu.Unlock()
 	}
 
 	return nil
@@ -229,6 +292,7 @@ func (m *Manager) addSubscription(sub *Subscription) {
 }
 
 // removeSubscription removes a subscription from tracking.
+// It also updates subscribedDevices state to maintain accurate service tracking.
 func (m *Manager) removeSubscription(sid string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -250,6 +314,20 @@ func (m *Manager) removeSubscription(sid string) {
 		}
 		if len(m.deviceSubs[sub.DeviceIP]) == 0 {
 			delete(m.deviceSubs, sub.DeviceIP)
+		}
+	}
+
+	// Update subscribedDevices state - remove the service mapping for this SID
+	if state, ok := m.subscribedDevices[sub.DeviceIP]; ok {
+		for svc, storedSID := range state.Services {
+			if storedSID == sid {
+				delete(state.Services, svc)
+				break
+			}
+		}
+		// If no services left, remove the device state entirely
+		if len(state.Services) == 0 {
+			delete(m.subscribedDevices, sub.DeviceIP)
 		}
 	}
 }
@@ -386,4 +464,40 @@ func (m *Manager) IsEnabled() bool {
 // GetCallbackURL returns the callback URL for registrations.
 func (m *Manager) GetCallbackURL() string {
 	return m.callbackURL
+}
+
+// IsDeviceFullySubscribed returns true if the device has active subscriptions for all required services.
+// This is used by the discovery callback to avoid spawning goroutines for already-subscribed devices.
+func (m *Manager) IsDeviceFullySubscribed(deviceIP string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	state, exists := m.subscribedDevices[deviceIP]
+	if !exists {
+		return false
+	}
+	return state.IsFullySubscribed(m.config.Services)
+}
+
+// shouldAttemptSubscription returns true if we should attempt to subscribe to the device.
+// It implements exponential backoff for failed devices.
+func (m *Manager) shouldAttemptSubscription(deviceIP string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	state, exists := m.subscribedDevices[deviceIP]
+	if !exists {
+		return true // No state, go ahead
+	}
+
+	if state.FailureCount == 0 {
+		return true // No failures, go ahead
+	}
+
+	// Exponential backoff: 30s, 60s, 120s, 240s, 480s, 600s max
+	backoffSeconds := 30 * (1 << state.FailureCount)
+	if backoffSeconds > 600 {
+		backoffSeconds = 600
+	}
+	return m.now().Sub(state.LastAttemptAt) > time.Duration(backoffSeconds)*time.Second
 }

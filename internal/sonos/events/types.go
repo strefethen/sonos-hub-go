@@ -180,3 +180,24 @@ type ManagerStats struct {
 	CacheHits            int64
 	CacheMisses          int64
 }
+
+// DeviceSubscriptionState tracks the subscription state for a single device.
+// This is used to ensure idempotent subscriptions and implement backoff on failures.
+type DeviceSubscriptionState struct {
+	DeviceIP      string                 // IP address of the device
+	DeviceUDN     string                 // UDN of the device
+	Services      map[ServiceType]string // serviceType -> SID mapping
+	SubscribedAt  time.Time              // When the device was first subscribed
+	LastAttemptAt time.Time              // When the last subscription attempt was made
+	FailureCount  int                    // Consecutive failure count for backoff
+}
+
+// IsFullySubscribed returns true if the device has active subscriptions for all required services.
+func (s *DeviceSubscriptionState) IsFullySubscribed(requiredServices []ServiceType) bool {
+	for _, svc := range requiredServices {
+		if _, ok := s.Services[svc]; !ok {
+			return false
+		}
+	}
+	return true
+}
