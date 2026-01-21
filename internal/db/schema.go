@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS scenes (
   members TEXT NOT NULL DEFAULT '[]',
   volume_ramp TEXT,
   teardown TEXT,
+  deleted_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS routines (
   occasions_enabled INTEGER NOT NULL DEFAULT 1,
   speakers_json TEXT,
   last_run_at TEXT,
+  deleted_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (scene_id) REFERENCES scenes(scene_id)
@@ -149,6 +151,7 @@ CREATE TABLE IF NOT EXISTS music_sets (
   occasion_start TEXT,
   occasion_end TEXT,
   artwork_url TEXT,
+  deleted_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -177,7 +180,7 @@ CREATE TABLE IF NOT EXISTS play_history (
   routine_id TEXT,
   played_at TEXT NOT NULL,
   FOREIGN KEY (set_id) REFERENCES music_sets(set_id),
-  FOREIGN KEY (routine_id) REFERENCES routines(routine_id)
+  FOREIGN KEY (routine_id) REFERENCES routines(routine_id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_play_history_favorite ON play_history(sonos_favorite_id, played_at);

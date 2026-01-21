@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -208,6 +209,136 @@ func runMigrations(db *sql.DB) error {
 		if _, err := db.Exec("ALTER TABLE set_items ADD COLUMN display_name TEXT"); err != nil {
 			return fmt.Errorf("add set_items.display_name: %w", err)
 		}
+	}
+
+	// Migrate play_history to add ON DELETE SET NULL for routine_id FK
+	if err := migratePlayHistoryFK(db); err != nil {
+		return err
+	}
+
+	// Add deleted_at columns for soft delete support
+	if !routinesColumns["deleted_at"] {
+		if _, err := db.Exec("ALTER TABLE routines ADD COLUMN deleted_at TEXT"); err != nil {
+			return fmt.Errorf("add routines.deleted_at: %w", err)
+		}
+		// Index for cleanup queries
+		if _, err := db.Exec("CREATE INDEX IF NOT EXISTS idx_routines_deleted_at ON routines(deleted_at) WHERE deleted_at IS NOT NULL"); err != nil {
+			return fmt.Errorf("create idx_routines_deleted_at: %w", err)
+		}
+	}
+
+	musicSetsColumns, err := tableColumns(db, "music_sets")
+	if err != nil {
+		return err
+	}
+	if !musicSetsColumns["deleted_at"] {
+		if _, err := db.Exec("ALTER TABLE music_sets ADD COLUMN deleted_at TEXT"); err != nil {
+			return fmt.Errorf("add music_sets.deleted_at: %w", err)
+		}
+		if _, err := db.Exec("CREATE INDEX IF NOT EXISTS idx_music_sets_deleted_at ON music_sets(deleted_at) WHERE deleted_at IS NOT NULL"); err != nil {
+			return fmt.Errorf("create idx_music_sets_deleted_at: %w", err)
+		}
+	}
+
+	scenesColumns, err := tableColumns(db, "scenes")
+	if err != nil {
+		return err
+	}
+	if !scenesColumns["deleted_at"] {
+		if _, err := db.Exec("ALTER TABLE scenes ADD COLUMN deleted_at TEXT"); err != nil {
+			return fmt.Errorf("add scenes.deleted_at: %w", err)
+		}
+		if _, err := db.Exec("CREATE INDEX IF NOT EXISTS idx_scenes_deleted_at ON scenes(deleted_at) WHERE deleted_at IS NOT NULL"); err != nil {
+			return fmt.Errorf("create idx_scenes_deleted_at: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// migratePlayHistoryFK recreates play_history table with ON DELETE SET NULL for routine_id FK.
+// This is safe: wrapped in transaction, verifies row counts before dropping old table.
+func migratePlayHistoryFK(db *sql.DB) error {
+	// Check if migration is needed by looking at the table's SQL definition
+	var tableSql string
+	err := db.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='play_history'").Scan(&tableSql)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil // Table doesn't exist, schema will create it correctly
+		}
+		return fmt.Errorf("check play_history schema: %w", err)
+	}
+
+	// If already has ON DELETE SET NULL, skip migration
+	if strings.Contains(tableSql, "ON DELETE SET NULL") {
+		return nil
+	}
+
+	// Start transaction for atomic migration
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback() // No-op if committed
+
+	// Count existing rows
+	var originalCount int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM play_history").Scan(&originalCount); err != nil {
+		return fmt.Errorf("count original rows: %w", err)
+	}
+
+	// Create new table with correct FK constraint
+	_, err = tx.Exec(`
+		CREATE TABLE play_history_new (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			sonos_favorite_id TEXT NOT NULL,
+			set_id TEXT,
+			routine_id TEXT,
+			played_at TEXT NOT NULL,
+			FOREIGN KEY (set_id) REFERENCES music_sets(set_id),
+			FOREIGN KEY (routine_id) REFERENCES routines(routine_id) ON DELETE SET NULL
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("create new table: %w", err)
+	}
+
+	// Copy all data
+	_, err = tx.Exec(`
+		INSERT INTO play_history_new (id, sonos_favorite_id, set_id, routine_id, played_at)
+		SELECT id, sonos_favorite_id, set_id, routine_id, played_at FROM play_history
+	`)
+	if err != nil {
+		return fmt.Errorf("copy data: %w", err)
+	}
+
+	// Verify row count matches
+	var newCount int
+	if err := tx.QueryRow("SELECT COUNT(*) FROM play_history_new").Scan(&newCount); err != nil {
+		return fmt.Errorf("count new rows: %w", err)
+	}
+	if newCount != originalCount {
+		return fmt.Errorf("row count mismatch: original=%d, new=%d", originalCount, newCount)
+	}
+
+	// Drop old table and rename new one
+	if _, err := tx.Exec("DROP TABLE play_history"); err != nil {
+		return fmt.Errorf("drop old table: %w", err)
+	}
+	if _, err := tx.Exec("ALTER TABLE play_history_new RENAME TO play_history"); err != nil {
+		return fmt.Errorf("rename table: %w", err)
+	}
+
+	// Recreate indexes
+	if _, err := tx.Exec("CREATE INDEX IF NOT EXISTS idx_play_history_favorite ON play_history(sonos_favorite_id, played_at)"); err != nil {
+		return fmt.Errorf("create favorite index: %w", err)
+	}
+	if _, err := tx.Exec("CREATE INDEX IF NOT EXISTS idx_play_history_set ON play_history(set_id, played_at)"); err != nil {
+		return fmt.Errorf("create set index: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
 	}
 
 	return nil
